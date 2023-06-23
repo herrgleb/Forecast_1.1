@@ -23,7 +23,7 @@ def version():
 
 @app.get('/mood')
 def mood():
-    return "Don't worry, be happy"
+    return "Don't worry, be happy!"
 
 
 @app.post('/predict')
