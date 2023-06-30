@@ -244,20 +244,6 @@ def best_models_fit(df, best_params, period):
 
 
 def main_prediction(buyer_list, category_list, channel):
-    # buyer_list = []
-
-    buyer_str = '('
-    for x in buyer_list:
-        buyer_str += str(x) + ','
-    buyer_str = buyer_str[:-1] + ')'
-    # print(buyer_str)
-
-    category_str = '('
-    for x in category_list:
-        category_str += str(x) + ','
-    category_str = category_str[:-1] + ')'
-
-    # print(category_str)
 
     time_connection = datetime.now()
     print('Start', time_connection)
@@ -268,24 +254,41 @@ def main_prediction(buyer_list, category_list, channel):
                    "UID=Web_User;"
                    "PWD=sPEP12bk0;")
     connection = pyodbc.connect(connect_str)
-    # cursor = connection.cursor()
+    cursor = connection.cursor()
 
     quoted = urllib.parse.quote_plus(connect_str)
     engine = create_engine(f'mssql+pyodbc:///?odbc_connect={quoted}')
 
     print('Time of connection', datetime.now() - time_connection)
 
-    if len(buyer_str) > 1:
-        data = pd.read_sql(f"SELECT * FROM [dbo].[SalesInWeek] "
-                           f"WHERE buyer_id in {buyer_str} and l3_id in {category_str}"
-                           f"and channel1_id = {channel}", connection)
-    else:
-        data = pd.read_sql(f"SELECT * FROM [dbo].[SalesInWeek] "
-                           f"WHERE l3_id in {category_str}"
-                           f"and channel1_id = {channel}", connection)
+    buyer_fulllist = pd.read_sql("SELECT [id] FROM [PromoPlannerMVPPresident].[dbo].[_spr_address_buyer]",
+                                 connection)
 
-    print(len(data))
-    year_calendar = pd.read_sql("SELECT [id], [year] FROM [PromoPlannerMVPPresident].[dbo].[_spr_date_year]", connection)
+    category_fulllist = pd.read_sql("SELECT [id] FROM [PromoPlannerMVPPresident].[dbo].[_spr_sku_l3]",
+                                    connection)
+
+    if len(buyer_list) < 1:
+        buyer_list = buyer_fulllist.id.to_list()
+    if len(category_list) < 1:
+        category_list = category_fulllist.id.to_list()
+
+    buyer_str = '('
+    for x in buyer_list:
+        buyer_str += str(x) + ','
+    buyer_str = buyer_str[:-1] + ')'
+
+    category_str = '('
+    for x in category_list:
+        category_str += str(x) + ','
+    category_str = category_str[:-1] + ')'
+
+    data = pd.read_sql(f"SELECT * FROM [dbo].[SalesInWeek] "
+                       f"WHERE buyer_id in {buyer_str} and l3_id in {category_str}"
+                       f"and channel1_id = {channel}", connection)
+    print(f"Was extracted {len(data)} string")
+
+    year_calendar = pd.read_sql("SELECT [id], [year] FROM [PromoPlannerMVPPresident].[dbo].[_spr_date_year]",
+                                connection)
 
     year_calendar = year_calendar.astype({'id': np.int64, 'year': np.int64})
 
@@ -294,8 +297,8 @@ def main_prediction(buyer_list, category_list, channel):
     df_new_1 = data.loc[(data['buyer_name'].notna()) | (data['l3_name'].notna())]
     df_new_1 = df_new_1[['year', 'year_id', 'month_id', 'volume', 'buyer_id', 'l3_id', 'buyer_name', 'l3_name']]
     buyer_name = df_new_1.buyer_id.value_counts().index.to_list()
-    print(buyer_name)
-    print(df_new_1)
+    # print(buyer_name)
+    # print(df_new_1)
 
     for buyer in buyer_name:
         df_final_full = pd.DataFrame(columns=['l3_id', 'buyer_id', 'year_id', 'month_id', 'volume',
@@ -476,16 +479,17 @@ def main_prediction(buyer_list, category_list, channel):
             df_final_full.to_sql('forecast_g_raw', schema='dbo', con=cnn, if_exists='append', index=False)
             print(f'Download {buyer} was successful')
 
+            print('Time of download full category prediction', datetime.now() - time_connection)
+
+            sql_split_forecast = "EXEC split_forecast_g @DateToLoad=?"
+            params = (time_connection)
+            cursor.execute(sql_split_forecast, params)
+            print('Full time', datetime.now() - time_connection)
+
     connection.close()
 
 
 # Press the green button in the gutter to run the script.
 if __name__ == '__main__':
     pass
-    # main_prediction(buyer_list=[],
-    #                 category_list=['Другое', 'Флосс', 'зубная паста детская', 'зубная паста',
-    #                                'Средства для протезов', 'Спрей д/рта', 'Зубная щетка детская',
-    #                                'Ополаскиватель', 'Зубная щетка'],
-    #                 channel="'FMCG'"
-    #                 )
-
+    # main_prediction(buyer_list=[], category_list=[], channel=18)

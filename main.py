@@ -28,9 +28,6 @@ def mood():
 
 @app.post('/predict')
 def predict(mask: Form):
-    print(mask.buyer_list)
-    print(mask.category_list)
-    print(mask.channel)
     main_prediction(buyer_list=mask.buyer_list,
                     category_list=mask.category_list,
                     channel=mask.channel
