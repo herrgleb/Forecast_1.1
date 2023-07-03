@@ -21,11 +21,6 @@ def version():
     return current_version()
 
 
-@app.get('/mood')
-def mood():
-    return "Don't worry, be happy!"
-
-
 @app.post('/predict')
 def predict(mask: Form):
     main_prediction(buyer_list=mask.buyer_list,
