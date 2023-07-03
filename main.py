@@ -13,7 +13,7 @@ class Form(BaseModel):
 
 @app.get('/status')
 def status():
-    return "My status is OK!"
+    return "My status is OK!!"
 
 
 @app.get('/version')
