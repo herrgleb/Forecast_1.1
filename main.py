@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Body
+from fastapi import FastAPI
 from prediction import current_version, main_prediction
 from pydantic import BaseModel
 
@@ -29,8 +29,24 @@ def predict(mask: Form):
                     )
     return f"Successful with buyers {mask.buyer_list}, categories {mask.category_list} and channels {mask.channel}"
 
+
+@app.post('/predict_regular')
+def predict(mask: Form):
+    main_prediction(buyer_list=mask.buyer_list,
+                    category_list=mask.category_list,
+                    channel=mask.channel,
+                    status_name=2
+                    )
+    return f"Successful with buyers {mask.buyer_list}, categories {mask.category_list} and channels {mask.channel}"
+
 # {
 #     "buyer_list": [4019, 3356],
 #     "category_list": [18, 19],
+#     "channel": 18
+# }
+
+# {
+#     "buyer_list": [2917],
+#     "category_list": [1],
 #     "channel": 18
 # }

@@ -243,7 +243,12 @@ def best_models_fit(df, best_params, period):
     return res
 
 
-def main_prediction(buyer_list, category_list, channel):
+def main_prediction(buyer_list, category_list, channel, status_name=0):
+
+    if status_name == 0:
+        status_name_act = 3
+    else:
+        status_name_act = status_name
 
     time_connection = datetime.now()
     print('Start', time_connection)
@@ -286,6 +291,9 @@ def main_prediction(buyer_list, category_list, channel):
                        f"WHERE buyer_id in {buyer_str} and l3_id in {category_str}"
                        f"and channel1_id = {channel}", connection)
     print(f"Was extracted {len(data)} string")
+    if status_name > 0:
+        data = data.loc[(data['status_id'] == status_name)]
+    print(data)
 
     year_calendar = pd.read_sql("SELECT [id], [year] FROM [PromoPlannerMVPPresident].[dbo].[_spr_date_year]",
                                 connection)
@@ -305,7 +313,7 @@ def main_prediction(buyer_list, category_list, channel):
                                               'predict_smoothing_seas', 'predict_holt_seas',
                                               'predict_arima', 'sellin_corr', 'predict_smoothing_corr_seas',
                                               'predict_holt_corr_seas', 'predict_arima_corr', 'date_upload',
-                                              'best_model'])
+                                              'best_model', 'status_id'])
         l3_name = df_new_1[df_new_1.buyer_id == buyer].l3_id.value_counts().index.to_list()
         # l3_name = [19.0, 18.0, 17.0, 21.0, 20.0, 15.0, 16.0, 14.0, 13.0]
         # print(l3_name)
@@ -317,7 +325,7 @@ def main_prediction(buyer_list, category_list, channel):
             df_new_1_2 = df_new_1_2.groupby(by=['year', 'month_id'], as_index=False).sum()
             df_new_1_2 = df_new_1_2.astype({'year': np.int64, 'month_id': np.int64, 'volume': np.float64})
 
-            if len(df_new_1_2) < 6:
+            if len(df_new_1_2) < 3:
                 print("Not enough length of dataset - ", len(df_new_1_2))
                 continue
 
@@ -385,6 +393,7 @@ def main_prediction(buyer_list, category_list, channel):
             df_final = df_final.assign(predict_holt_corr=res_Y[1][0:len(df_final)])
             df_final = df_final.assign(predict_arima_corr=res_Y[2][0:len(df_final)])
             df_final = df_final.assign(date_upload=time_connection)
+            df_final = df_final.assign(status_id=status_name_act)
 
             len_st = len(df_final)
 
@@ -410,7 +419,8 @@ def main_prediction(buyer_list, category_list, channel):
                                      "predict_smoothing_corr": res_Y[0][len_st + i],
                                      "predict_holt_corr": res_Y[1][len_st + i],
                                      "predict_arima_corr": res_Y[2][len_st + i],
-                                     "date_upload": time_connection})
+                                     "date_upload": time_connection,
+                                     "status_id": status_name_act})
                 df_final = df_final.append(new_row, ignore_index=True)
 
             df_final['Seas'] = df_final['month_id'].map(seasonal(df_new_1_2, 12))
@@ -437,7 +447,7 @@ def main_prediction(buyer_list, category_list, channel):
             df_final = df_final[
                 ['buyer_id', 'l3_id', 'year_id', 'month_id', 'volume', 'predict_smoothing_seas',
                  'predict_holt_seas', 'predict_arima', 'sellin_corr', 'predict_smoothing_corr_seas',
-                 'predict_holt_corr_seas', 'predict_arima_corr', 'date_upload']]
+                 'predict_holt_corr_seas', 'predict_arima_corr', 'date_upload', 'status_id']]
 
             # print(df_final)
             df_final_st = df_final[:len_st]
@@ -473,14 +483,17 @@ def main_prediction(buyer_list, category_list, channel):
                                               'predict_holt_corr_seas': np.float64,
                                               'predict_arima_corr': np.float64,
                                               'date_upload': np.datetime64,
-                                              'best_model': np.str_})
+                                              'best_model': np.str_,
+                                              'status_id': np.int64})
+
+        print(df_final_full)
 
         with engine.connect() as cnn:
             df_final_full.to_sql('forecast_g_raw', schema='dbo', con=cnn, if_exists='append', index=False)
             print(f'Download {buyer} was successful')
 
             print('Time of download full category prediction', datetime.now() - time_connection)
-
+            break
             sql_split_forecast = "EXEC split_forecast_g @DateToLoad=?"
             params = (time_connection)
             cursor.execute(sql_split_forecast, params)
