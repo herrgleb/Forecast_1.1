@@ -1,12 +1,13 @@
 from fastapi import FastAPI
 from prediction import current_version, main_prediction
 from pydantic import BaseModel
+from datetime import datetime
 
 app = FastAPI()
 
 
 class Form(BaseModel):
-    buyer_list: list
+    chain_list: list
     category_list: list
     channel: int
 
@@ -23,21 +24,31 @@ def version():
 
 @app.post('/predict')
 def predict(mask: Form):
-    main_prediction(buyer_list=mask.buyer_list,
+    cur_time = datetime.now()
+    main_prediction(chain_list=mask.chain_list,
                     category_list=mask.category_list,
-                    channel=mask.channel
+                    channel=mask.channel,
+                    time_connection=cur_time
                     )
-    return f"Successful with buyers {mask.buyer_list}, categories {mask.category_list} and channels {mask.channel}"
+    main_prediction(chain_list=mask.chain_list,
+                    category_list=mask.category_list,
+                    channel=mask.channel,
+                    time_connection=cur_time,
+                    status_name=2
+                    )
+    return f"Successful with buyers {mask.chain_list}, categories {mask.category_list} and channels {mask.channel}"
 
 
 @app.post('/predict_regular')
 def predict(mask: Form):
-    main_prediction(buyer_list=mask.buyer_list,
+    cur_time = datetime.now()
+    main_prediction(chain_list=mask.chain_list,
                     category_list=mask.category_list,
                     channel=mask.channel,
+                    time_connection=cur_time,
                     status_name=2
                     )
-    return f"Successful with buyers {mask.buyer_list}, categories {mask.category_list} and channels {mask.channel}"
+    return f"Successful with buyers {mask.chain_list}, categories {mask.category_list} and channels {mask.channel}"
 
 # {
 #     "buyer_list": [4019, 3356],

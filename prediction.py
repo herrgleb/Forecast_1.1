@@ -16,7 +16,7 @@ from datetime import datetime
 
 
 def current_version():
-    return "Forecast_3_models.ver_1.2"
+    return "Forecast_3_models.ver_1.3"
 
 
 # Func for defining quantile range
@@ -184,12 +184,13 @@ def Arima(train, test, p_max, q_max, d_max):
 def best_params_founder(err_dict, best_params):
     if len(err_dict) > 0:
         init = sorted([x[0] for x in err_dict.values()])
-        threshold = 0.15
+        threshold = 0.4
         best_train_err = init[0] * (1 + threshold)
         init_1 = sorted([x[1] for x in err_dict.values() if x[0] <= best_train_err])
         for keys, values in err_dict.items():
             if (values[1] == init_1[0]) and (keys not in best_params):
-                best_params.append(keys)
+                add_str = keys + "_" + str(init_1[0])
+                best_params.append(add_str)
     return best_params
 
 
@@ -243,14 +244,31 @@ def best_models_fit(df, best_params, period):
     return res
 
 
-def main_prediction(buyer_list, category_list, channel, status_name=0):
+def define_best_model_test(best_params_X, best_params_Y):
+    best_score = -1
+    best_model = "Unknown"
+    for elem in best_params_X:
+        model_name = elem.split("_")[0]
+        model_score = float(elem.split("_")[2])
+        if best_score < 0 or best_score > model_score:
+            best_score = model_score
+            best_model = model_name
+    for elem in best_params_Y:
+        model_name = elem.split("_")[0]
+        model_score = float(elem.split("_")[2])
+        if best_score < 0 or best_score > model_score:
+            best_score = model_score
+            best_model = model_name + "_corr"
+    return best_model
 
+
+def main_prediction(chain_list, category_list, channel, time_connection, status_name=0):
     if status_name == 0:
         status_name_act = 3
     else:
         status_name_act = status_name
 
-    time_connection = datetime.now()
+    # time_connection = datetime.now()
     print('Start', time_connection)
 
     connect_str = ("Driver={SQL Server Native Client 11.0};"
@@ -266,21 +284,21 @@ def main_prediction(buyer_list, category_list, channel, status_name=0):
 
     print('Time of connection', datetime.now() - time_connection)
 
-    buyer_fulllist = pd.read_sql("SELECT [id] FROM [PromoPlannerMVPPresident].[dbo].[_spr_address_buyer]",
+    chain_fulllist = pd.read_sql("SELECT [id] FROM [PromoPlannerMVPPresident].[dbo].[_spr_address_chain]",
                                  connection)
 
     category_fulllist = pd.read_sql("SELECT [id] FROM [PromoPlannerMVPPresident].[dbo].[_spr_sku_l3]",
                                     connection)
 
-    if len(buyer_list) < 1:
-        buyer_list = buyer_fulllist.id.to_list()
+    if len(chain_list) < 1:
+        chain_list = chain_fulllist.id.to_list()
     if len(category_list) < 1:
         category_list = category_fulllist.id.to_list()
 
-    buyer_str = '('
-    for x in buyer_list:
-        buyer_str += str(x) + ','
-    buyer_str = buyer_str[:-1] + ')'
+    chain_str = '('
+    for x in chain_list:
+        chain_str += str(x) + ','
+    chain_str = chain_str[:-1] + ')'
 
     category_str = '('
     for x in category_list:
@@ -288,7 +306,7 @@ def main_prediction(buyer_list, category_list, channel, status_name=0):
     category_str = category_str[:-1] + ')'
 
     data = pd.read_sql(f"SELECT * FROM [dbo].[SalesInWeek] "
-                       f"WHERE buyer_id in {buyer_str} and l3_id in {category_str}"
+                       f"WHERE chain_id in {chain_str} and l3_id in {category_str}"
                        f"and channel1_id = {channel}", connection)
     print(f"Was extracted {len(data)} string")
     if status_name > 0:
@@ -302,25 +320,25 @@ def main_prediction(buyer_list, category_list, channel, status_name=0):
 
     print('Time of download', datetime.now() - time_connection)
 
-    df_new_1 = data.loc[(data['buyer_name'].notna()) | (data['l3_name'].notna())]
-    df_new_1 = df_new_1[['year', 'year_id', 'month_id', 'volume', 'buyer_id', 'l3_id', 'buyer_name', 'l3_name']]
-    buyer_name = df_new_1.buyer_id.value_counts().index.to_list()
-    # print(buyer_name)
-    # print(df_new_1)
+    df_new_1 = data.loc[(data['chain_name'].notna()) | (data['l3_name'].notna())]
+    df_new_1 = df_new_1[['year', 'year_id', 'month_id', 'volume', 'chain_id', 'l3_id', 'chain_name', 'l3_name']]
+    chain_name = df_new_1.chain_id.value_counts().index.to_list()
+    print(chain_name)
+    print(df_new_1)
 
-    for buyer in buyer_name:
-        df_final_full = pd.DataFrame(columns=['l3_id', 'buyer_id', 'year_id', 'month_id', 'volume',
+    for chain in chain_name:
+        df_final_full = pd.DataFrame(columns=['l3_id', 'chain_id', 'year_id', 'month_id', 'volume',
                                               'predict_smoothing_seas', 'predict_holt_seas',
                                               'predict_arima', 'sellin_corr', 'predict_smoothing_corr_seas',
                                               'predict_holt_corr_seas', 'predict_arima_corr', 'date_upload',
-                                              'best_model', 'status_id'])
-        l3_name = df_new_1[df_new_1.buyer_id == buyer].l3_id.value_counts().index.to_list()
-        # l3_name = [19.0, 18.0, 17.0, 21.0, 20.0, 15.0, 16.0, 14.0, 13.0]
+                                              'best_model_test', 'best_model', 'status_id'])
+        l3_name = df_new_1[df_new_1.chain_id == chain].l3_id.value_counts().index.to_list()
+        # l3_name = [19.0, 18.0, 17.0, 21.0, 20.0, 15.0, 16.0, 14 .0, 13.0]
         # print(l3_name)
         for l3 in l3_name:
-            print(f'Start prediction {buyer} for group {l3}')
+            print(f'Start prediction {chain} for group {l3}')
 
-            df_new_1_2 = df_new_1[(df_new_1.buyer_id == buyer) & (df_new_1.l3_id == l3)]
+            df_new_1_2 = df_new_1[(df_new_1.chain_id == chain) & (df_new_1.l3_id == l3)]
             df_new_1_2 = df_new_1_2[['year', 'month_id', 'volume']]
             df_new_1_2 = df_new_1_2.groupby(by=['year', 'month_id'], as_index=False).sum()
             df_new_1_2 = df_new_1_2.astype({'year': np.int64, 'month_id': np.int64, 'volume': np.float64})
@@ -386,7 +404,7 @@ def main_prediction(buyer_list, category_list, channel, status_name=0):
             df_final = df_final.assign(predict_holt=res_X[1][0:len(df_final)])
             df_final = df_final.assign(predict_arima=res_X[2][0:len(df_final)])
             df_final = df_final.assign(l3_id=l3)
-            df_final = df_final.assign(buyer_id=buyer)
+            df_final = df_final.assign(chain_id=chain)
             df_final = df_final.assign(region_id='')
             df_final = df_final.assign(sellin_corr=list(Y.values))
             df_final = df_final.assign(predict_smoothing_corr=res_Y[0][0:len(df_final)])
@@ -413,7 +431,7 @@ def main_prediction(buyer_list, category_list, channel, status_name=0):
                                      "predict_holt": res_X[1][len_st + i],
                                      "predict_arima": res_X[2][len_st + i],
                                      "l3_id": l3,
-                                     "buyer_id": buyer,
+                                     "chain_id": chain,
                                      "region_id": '',
                                      "sellin_corr": 0,
                                      "predict_smoothing_corr": res_Y[0][len_st + i],
@@ -445,11 +463,21 @@ def main_prediction(buyer_list, category_list, channel, status_name=0):
             df_final = df_final.drop(
                 ['predict_smoothing', 'predict_holt', 'predict_smoothing_corr', 'predict_holt_corr'], axis=1)
             df_final = df_final[
-                ['buyer_id', 'l3_id', 'year_id', 'month_id', 'volume', 'predict_smoothing_seas',
+                ['chain_id', 'l3_id', 'year_id', 'month_id', 'volume', 'predict_smoothing_seas',
                  'predict_holt_seas', 'predict_arima', 'sellin_corr', 'predict_smoothing_corr_seas',
                  'predict_holt_corr_seas', 'predict_arima_corr', 'date_upload', 'status_id']]
 
             # print(df_final)
+            model_dict = {'Smoothing': 'predict_smoothing_seas',
+                          'Holt': 'predict_holt_seas',
+                          'ARIMA': 'predict_arima',
+                          'Smoothing_corr': 'predict_smoothing_corr_seas',
+                          'Holt_corr': 'predict_holt_corr_seas',
+                          'ARIMA_corr': 'predict_arima_corr',
+                          'Unknown': 'Unknown'
+                          }
+            best_model_df = model_dict[define_best_model_test(best_params_X, best_params_Y)]
+            print(best_model_df)
             df_final_st = df_final[:len_st]
             score = 0.
             best_model = 'Unknown'
@@ -465,13 +493,14 @@ def main_prediction(buyer_list, category_list, channel, status_name=0):
                 except ValueError:
                     continue
 
+            df_final['best_model_test'] = best_model_df
             df_final['best_model'] = best_model
 
             df_final_full = df_final_full.append(df_final)
             print(df_final_full)
 
         df_final_full = df_final_full.astype({'l3_id': np.int64,
-                                              'buyer_id': np.int64,
+                                              'chain_id': np.int64,
                                               'year_id': np.int64,
                                               'month_id': np.int64,
                                               'volume': np.float64,
@@ -483,6 +512,7 @@ def main_prediction(buyer_list, category_list, channel, status_name=0):
                                               'predict_holt_corr_seas': np.float64,
                                               'predict_arima_corr': np.float64,
                                               'date_upload': np.datetime64,
+                                              'best_model_test': np.str_,
                                               'best_model': np.str_,
                                               'status_id': np.int64})
 
@@ -490,7 +520,7 @@ def main_prediction(buyer_list, category_list, channel, status_name=0):
 
         with engine.connect() as cnn:
             df_final_full.to_sql('forecast_g_raw', schema='dbo', con=cnn, if_exists='append', index=False)
-            print(f'Download {buyer} was successful')
+            print(f'Download {chain} was successful')
 
             print('Time of download full category prediction', datetime.now() - time_connection)
             break
