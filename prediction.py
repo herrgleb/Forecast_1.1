@@ -16,7 +16,7 @@ from datetime import datetime
 
 
 def current_version():
-    return "Forecast_3_models.ver_1.3"
+    return "Forecast_3_models.ver_1.4"
 
 
 # Func for defining quantile range
