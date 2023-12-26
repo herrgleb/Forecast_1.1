@@ -1131,7 +1131,6 @@ def main_prediction_week(df, coef_smoothing, filling_calendar='yes', start_perio
         best_params_founder(
             Arima(train_X, test_X, 15, 2, 2, df_modeling_X.iloc[:-t], modeling=1),
             best_params_X)
-        # dfdfcssgsdfg
         print(best_params_X)
 
 
