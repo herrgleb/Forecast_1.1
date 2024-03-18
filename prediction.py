@@ -1389,7 +1389,7 @@ if __name__ == '__main__':
     # КАМ2 Кузнецова Интернет Решения - зубная паста
 
     main_prediction(
-         chain_list= [226],
+         chain_list=[226],
          category_list=[35],
          channel=38,
          time_connection=datetime.now(),
