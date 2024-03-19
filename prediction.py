@@ -1,6 +1,7 @@
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
+from pathlib import Path
 
 from sklearn.metrics import mean_absolute_error, mean_squared_error
 
@@ -70,7 +71,7 @@ def no_sales_criteria(df, n):
     if n == 0:
         print("No criteria about no sales period!")
         return False
-    elif df.iloc[-n:].values.sum() <= 0.:
+    elif df.iloc[-n:].values.sum() == 0.:
         print(f"Last {n} values is 0. Stop modeling")
         return True
     else:
@@ -451,12 +452,17 @@ def define_best_model_test_np(best_params_X, best_params_Y):
 
 
 def connection_DB(time_connection, chain_list, category_list, status_name):
+    CONNECTION_PATH = Path()
+    FILENAME = "connection_DB.txt"
+    CONNECTION_FILENAME = CONNECTION_PATH / FILENAME
+    with open(CONNECTION_FILENAME) as f:
+        lines = f.readlines()
+    connect_str = ""
+    for x in lines:
+        connect_str += x.replace('/n','')
+    connect_str = " ".join(connect_str.split())
     print('Start', time_connection)
-    connect_str = ("Driver={SQL Server Native Client 11.0};"
-                   "Server=109.73.41.150;"
-                   "Database=PromoPlannerMVPPresident;"
-                   "UID=Web_User;"
-                   "PWD=sPEP12bk0;")
+
     connection = pyodbc.connect(connect_str)
 
     print('Time of connection', datetime.now() - time_connection)
@@ -509,8 +515,28 @@ def connection_DB(time_connection, chain_list, category_list, status_name):
     return data, year_calendar
 
 
-def main_prediction(chain_list, category_list, channel, time_connection, status_name=0):
+def download_DB(df):
+    CONNECTION_PATH = Path()
+    FILENAME = "connection_DB.txt"
+    CONNECTION_FILENAME = CONNECTION_PATH / FILENAME
+    with open(CONNECTION_FILENAME) as f:
+        lines = f.readlines()
+    connect_str = ""
+    for x in lines:
+        connect_str += x.replace('/n', '')
+    connect_str = " ".join(connect_str.split())
+    connection = pyodbc.connect(connect_str)
+    cursor = connection.cursor()
 
+    quoted = urllib.parse.quote_plus(connect_str)
+    engine = create_engine(f'mssql+pyodbc:///?odbc_connect={quoted}')
+
+    with engine.connect() as cnn:
+        print("~~~Downloading~~~")
+        df.to_sql('forecast_g_raw', schema='dbo', con=cnn, if_exists='append', index=False)
+
+
+def main_prediction(chain_list, category_list, channel, time_connection, status_name=0):
     data, year_calendar = connection_DB(time_connection,
                                         chain_list,
                                         category_list,
@@ -737,8 +763,8 @@ def main_prediction(chain_list, category_list, channel, time_connection, status_
                           'Holt-Winters_corr': 'predict_holt_wint_corr',
                           'Unknown': 'Unknown'
                           }
-            #best_model_df_1 = model_dict[define_best_model_test_np(best_params_X, best_params_Y)[0]]
-            #print("Best model test", best_model_df_1)
+            # best_model_df_1 = model_dict[define_best_model_test_np(best_params_X, best_params_Y)[0]]
+            # print("Best model test", best_model_df_1)
             last_year_index = max(len_st - t - 12, 0)
             last_year_volume = df_final[last_year_index:len_st - t].volume.sum()
 
@@ -748,7 +774,7 @@ def main_prediction(chain_list, category_list, channel, time_connection, status_
                 model_ = model_dict[bm[0]]
                 next_year_volume = df_final[len_st - t:len_st - t + 12][model_].sum()
                 print(f"Growth with model {model_} is {next_year_volume / last_year_volume}")
-                if ((next_year_volume/last_year_volume > 1.8 or next_year_volume/last_year_volume < 0.4) or
+                if ((next_year_volume / last_year_volume > 1.8 or next_year_volume / last_year_volume < 0.4) or
                         next_year_volume == 0):
                     continue
                 else:
@@ -825,23 +851,24 @@ def main_prediction(chain_list, category_list, channel, time_connection, status_
                                                'predict_holt_wint_corr']]
         # print(df_final_full_reorder)
         filename = time_connection.strftime("%d%m%y")
-        chain = "FMCG"
+        chain = chain
         filename += "___" + str(chain) + ".csv"
         filename = "data/" + filename
         print(filename)
         df_final_full_reorder.to_csv(filename, mode='a', decimal=',', index=False)
+        download_DB(df_final_full_reorder)
 
         # with engine.connect() as cnn:
-        #     df_final_full.to_sql('forecast_g_raw', schema='dbo', con=cnn, if_exists='append', index=False)
-        #     print(f'Download {chain} was successful')
-        #
-        #     print('Time of download full category prediction', datetime.now() - time_connection)
+        #      df_final_full.to_sql('forecast_g_raw', schema='dbo', con=cnn, if_exists='append', index=False)
+        print(f'Download {chain} was successful')
+
+        print('Time of download full category prediction', datetime.now() - time_connection)
         #     #     # sql_split_forecast = "EXEC split_forecast_g @DateToLoad=?"
         #     #     # params = (time_connection)
         #     #     # cursor.execute(sql_split_forecast, params)
         #     print('Full time', datetime.now() - time_connection)
 
-    #connection.close()
+    # connection.close()
 
 
 def main_prediction_new(chain_list, category_list, channel, time_connection, status_name=0):
@@ -1374,9 +1401,11 @@ if __name__ == '__main__':
     pass
     # 881
     # print(datetime.now())
-    date_time_obj = datetime.strptime('2024-02-18 22:27:05.853', '%Y-%m-%d %H:%M:%S.%f')
+    date_time_obj = datetime.strptime('2024-03-19 00:00:00.000', '%Y-%m-%d %H:%M:%S.%f')
     # date_time_obj = datetime.now()
     # print(date_time_obj)
+
+    connection_DB(date_time_obj, [36], [35], 0)
 
     # main_prediction_week(pd.read_csv('week_test.csv', sep=';', decimal='.'), 1, 'yes')
 
@@ -1386,12 +1415,16 @@ if __name__ == '__main__':
     # print(define_best_model_test(best_param_X, best_param_Y))
     # print(define_best_model_test_np(best_param_X, best_param_Y))
 
-    # КАМ2 Кузнецова Интернет Решения - зубная паста
-
-    main_prediction(
-         chain_list=[226],
-         category_list=[35],
-         channel=38,
-         time_connection=datetime.now(),
-         status_name=0)
-
+    # main_prediction(
+    #     chain_list=[36,226,232,237,239,240,247,251,256,272,279,299,303,323,331,335,364,392,397,449,464,522,523,538,580,585,586,617,655,660,662,697,737,854,920,921,1550,1555,1563,1688,1689,1704,1719,2745],
+    #     category_list=[],
+    #     channel=38,
+    #     time_connection=date_time_obj,
+    #     status_name=0)
+    #
+    # main_prediction(
+    #     chain_list=[36,226,232,237,239,240,247,251,256,272,279,299,303,323,331,335,364,392,397,449,464,522,523,538,580,585,586,617,655,660,662,697,737,854,920,921,1550,1555,1563,1688,1689,1704,1719,2745],
+    #     category_list=[],
+    #     channel=38,
+    #     time_connection=date_time_obj,
+    #     status_name=2)
