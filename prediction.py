@@ -71,7 +71,7 @@ def no_sales_criteria(df, n):
     if n == 0:
         print("No criteria about no sales period!")
         return False
-    elif df.iloc[-n:].values.sum() == 0.:
+    elif df.iloc[-n:].values.sum() <= 0.:
         print(f"Last {n} values is 0. Stop modeling")
         return True
     else:
