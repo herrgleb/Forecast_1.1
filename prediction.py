@@ -379,12 +379,12 @@ def Arima(train,  # Train dataset
 
 # Finding best_params from error dictionary
 def best_params_founder(err_dict,  # Error dictionary
-                        best_params):  # List of best parameters for every type of models
+                        best_params):  # List of the best parameters for every type of models
     if len(err_dict) > 0:
         init = sorted([x[0] for x in err_dict.values()])
         threshold = 0.2
         best_train_err = init[0] * (1 + threshold)
-        # Inintianlize list with only good score for train (not worse than % of best train score)
+        # Initialize list with only good score for train (not worse than % of best train score)
         init_1 = sorted([x[1] for x in err_dict.values() if x[0] <= best_train_err])
         for keys, values in err_dict.items():
             if (values[1] == init_1[0]) and (keys not in best_params):
@@ -654,7 +654,7 @@ def main_prediction(chain_list,  # List of necessary buyers
         for l3 in l3_name:
             print(f'Start prediction {chain} for group {l3}')
 
-            # Some data preporation
+            # Some data preparation
             df_new_1_2 = df_new_1[(df_new_1.cpg_id == chain) & (df_new_1.l3_id == l3)]
             df_new_1_2 = df_new_1_2[['year', 'month_id', 'volume']]
             df_new_1_2 = df_new_1_2.groupby(by=['year', 'month_id'], as_index=False).sum()
@@ -689,8 +689,6 @@ def main_prediction(chain_list,  # List of necessary buyers
 
             df_new_1_2.loc[(df_new_1_2['volume'] <= 0), 'volume'] = 0.000001
 
-            #print(df_new_1_2)
-
             # Making Series for predictions
             X = df_new_1_2['volume']
             X = X.reset_index(drop=True)
@@ -702,7 +700,7 @@ def main_prediction(chain_list,  # List of necessary buyers
             Y[(Y.values < quan_res[0])] = quan_res[0]
             Y[(Y.values > quan_res[1])] = quan_res[1]
 
-            t = 1 # except 1 month from dataset, cuz it can be not full else
+            t = 1  # except 1 month from dataset, cuz it can be not full else
             X_m = X[:-t]
             train_size = int(len(X_m) * 0.7)
             train_X, test_X = X_m[:train_size].to_list(), X_m[train_size:].to_list()
@@ -821,7 +819,7 @@ def main_prediction(chain_list,  # List of necessary buyers
 
             df_final['Seas'] = df_final['month_id'].map(seasonal(df_new_1_2, 12))
 
-            # Apply seosonal coefficients for Smoothing and Holt model's predictions
+            # Apply seasonal coefficients for Smoothing and Holt model's predictions
             df_final['predict_smoothing_seas'] = df_final['Seas'] * df_final['predict_smoothing']
             df_final['predict_holt_seas'] = df_final['Seas'] * df_final['predict_holt']
 
@@ -858,7 +856,7 @@ def main_prediction(chain_list,  # List of necessary buyers
                           'Unknown': 'Unknown'
                           }
 
-            # Defining best model on test with some hand-made updates to business tast.
+            # Defining best model on test with some hand-made updates to business task
             # Growth next year has to be hand limited (now it is not higher than 1.8 and not lower 0.4 to prev year
             last_year_index = max(len_st - t - 12, 0)
             last_year_volume = df_final[last_year_index:len_st - t].volume.sum()
@@ -967,7 +965,6 @@ def main_prediction(chain_list,  # List of necessary buyers
         # params = (time_connection)
         # cursor.execute(sql_split_forecast, params)
         print('Full time', datetime.now() - time_connection)
-
 
 
 # Developing of prediction loop for weeks dataset (in process now)
