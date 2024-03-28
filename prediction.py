@@ -24,12 +24,13 @@ pd.set_option('display.max_columns', 500)
 pd.set_option('display.width', 1000)
 
 
+# Current version of project
 def current_version():
-    return "Forecast_3_models.ver_1.8"
+    return "Forecast_3_models.ver_1.29"
 
 
-# Func for defining quantile range
-def quantile_range(data):
+# Function for defining quantile range to find outliers
+def quantile_range(data: pd.Series):
     q25 = data.quantile(q=0.25)
     q75 = data.quantile(q=0.75)
     delta = q75 - q25
@@ -37,22 +38,23 @@ def quantile_range(data):
     return boundaries
 
 
-# Func for defining 3 sigma range
-def three_sigma_borders(data):
+# Function for defining 3 sigma range  to find outliers
+def three_sigma_borders(data: pd.Series):
     low = data.mean() - 3 * data.std()
     high = data.mean() + 3 * data.std()
     res = (low, high)
     return res
 
 
-# Research seasonal coefficients
-def seasonal(df, n):
+# Function for defining seasonal coefficients for prediction in months
+def seasonal(df: pd.DataFrame,  # DataFrame with (year, volume and month_id) columns
+             n=12):  # Number of months
     full_year = []
-    seas_dict_month = {1: 0, 2: 0, 3: 0, 4: 0, 5: 0, 6: 0, 7: 0, 8: 0, 9: 0, 10: 0, 11: 0, 12: 0}
-    for y in df.year.unique():
+    seas_dict_month = {1: 0, 2: 0, 3: 0, 4: 0, 5: 0, 6: 0, 7: 0, 8: 0, 9: 0, 10: 0, 11: 0, 12: 0}  #
+    for y in df.year.unique():  # research dataset for finding all full year samples (years with volume for n months
         if len(df[df.year == y]) == n:
             full_year.append(y)
-    for f_y in full_year:
+    for f_y in full_year:  # calculation seasonal coefficients
         for m in range(1, 13):
             seas_dict_month[m] = seas_dict_month[m] + df[(df['year'] == f_y) & (df['month_id'] == m)]['volume'].values[
                 0] / \
@@ -63,11 +65,9 @@ def seasonal(df, n):
     return seas_dict_month
 
 
-def set_value(row_number, assigned_value):
-    return assigned_value[row_number]
-
-
-def no_sales_criteria(df, n):
+# Function for defining datasets without sales last N months
+def no_sales_criteria(df: pd.DataFrame,
+                      n: int):
     if n == 0:
         print("No criteria about no sales period!")
         return False
@@ -78,8 +78,11 @@ def no_sales_criteria(df, n):
         return False
 
 
-# Form full list month and year between start point and finish point
-def sample_calendar(start_year, start_month, final_year, final_month):
+# Build-up Calendar DataFrame (year, month_id) between start and end points
+def sample_calendar(start_year: int,
+                    start_month: int,
+                    final_year: int,
+                    final_month: int):
     res = []
     s = 1
     f = 12
@@ -96,7 +99,11 @@ def sample_calendar(start_year, start_month, final_year, final_month):
     return calendar
 
 
-def sample_calendar_week(start_year, start_week, final_year, final_week):
+# Build-up Calendar DataFrame (year, week_id) between start and end points
+def sample_calendar_week(start_year: int,
+                         start_week: int,
+                         final_year: int,
+                         final_week: int):
     res = []
     s = 1
     f = 52
@@ -113,7 +120,7 @@ def sample_calendar_week(start_year, start_week, final_year, final_week):
     return calendar
 
 
-# Func for counting quality metrics
+# Function for calculation quality metrics (BAES and MAPE)
 def metrics(df, buyer, group, target_column, prediction_columns, periods):
     res = pd.DataFrame(columns=['chain'] + ['group'] + ['model'] + ['metric'] + periods)
     for predict in prediction_columns:
@@ -130,14 +137,21 @@ def metrics(df, buyer, group, target_column, prediction_columns, periods):
     return res
 
 
-# Simple Smoothing forecast
-def SimpleSmooth_Seas(train, test, seas, step, df_modeling, modeling=0):
+# Build-up Simple Smoothing models
+def SimpleSmooth_Seas(train,  # Train dataset
+                      test,  # Test dataset
+                      seas,  # Seasonal dataset
+                      step,  # step for griding alpha parameter
+                      df_modeling,  # Dataframe with representation of the process
+                      modeling=0):  # parameter for switching mode of representation (1 - turn on. 0 - turn off)
     print('Start SimpleSmooth')
+    # if we can't define DataFrame with seasonal coefficients --> Stop Simple Smoothing modeling
     for i in seas:
         if math.isnan(i) or i == 0:
             print("Seasonal is not defined")
             return {}
     error_dict_X_S = {}
+    # Loop for checking models with set up alphas in range(0,1) with step
     for alpha in range(0, 100, int(step * 100)):
         try:
             threshold = 'No'
@@ -147,12 +161,15 @@ def SimpleSmooth_Seas(train, test, seas, step, df_modeling, modeling=0):
             fcast_seas = []
             for x, y in zip(fcast, seas):
                 fcast_seas.append(x * y)
-            if (statistics.pstdev(fcast_seas) >= statistics.pstdev(test) * (1 - 0.90)) and \
-                    (statistics.pstdev(model.fittedvalues) >= statistics.pstdev(train) * (1 - 0.90)):
+            # Check std for prediction on Train and Test. If std is near with train/test target std, we will add metrics
+            # to dictionary with model_name and score for train and test
+            if (statistics.pstdev(fcast_seas) >= statistics.pstdev(test) * (1 - 0.50)) and \
+                    (statistics.pstdev(model.fittedvalues) >= statistics.pstdev(train) * (1 - 0.50)):
                 threshold = 'Added'
                 error_dict_X_S['Smoothing_' + str(alpha / 100)] = [
                     mean_absolute_error(train, model.fittedvalues),
                     mean_absolute_error(test, fcast_seas)]
+            # Build-up Dataframe with representation of the process
             if modeling == 1:
                 res_modeling = np.append(model.fittedvalues, fcast_seas)
                 df_modeling_1 = df_modeling.copy()
@@ -165,18 +182,21 @@ def SimpleSmooth_Seas(train, test, seas, step, df_modeling, modeling=0):
         except ValueError:
             print("Value error. Alpha level: ", alpha / 100)
             continue
+    # Check model with estimated method of initialization
     threshold = 'No'
     model = SimpleExpSmoothing(train, initialization_method="estimated").fit()
     fcast = model.forecast(len(test))
     fcast_seas = []
     for x, y in zip(fcast, seas):
         fcast_seas.append(x * y)
+    # Check std
     if (statistics.pstdev(fcast_seas) >= statistics.pstdev(test) * (1 - 0.50)) and \
             (statistics.pstdev(model.fittedvalues) >= statistics.pstdev(train) * (1 - 0.50)):
         threshold = 'Added'
         error_dict_X_S['Smoothing_' + str(model.model.params["smoothing_level"])] = [
             mean_absolute_error(train, model.fittedvalues),
             mean_absolute_error(test, fcast_seas)]
+    # Build-up Dataframe with representation of the process
     if modeling == 1:
         res_modeling = np.append(model.fittedvalues, fcast_seas)
         df_modeling_1 = df_modeling.copy()
@@ -187,30 +207,41 @@ def SimpleSmooth_Seas(train, test, seas, step, df_modeling, modeling=0):
         df_modeling_1 = df_modeling_1.assign(threshold=threshold)
         df_modeling_1.to_csv("Modeling.csv", mode="a")
 
+    # return dictionary {model_name: mae_score}
     return error_dict_X_S
 
 
-# Holt forecast
-def Holt_Seas(train, test, seas, step1, step2, df_modeling, modeling=0):
+# # Build-up Holt method models
+def Holt_Seas(train,  # Train dataset
+              test,  # Test dataset
+              seas,  # Seasonal dataset
+              step1,  # step for griding alpha parameter
+              step2,  # step for griding beta parameter
+              df_modeling,  # Dataframe with representation of the process
+              modeling=0):  # parameter for switching mode of representation (1 - turn on. 0 - turn off)
+
     print('Start Holt')
+    # if we can't define DataFrame with seasonal coefficients --> Stop Holt method modeling
     for i in seas:
         if math.isnan(i) or i == 0:
             print("Seasonal is not defined")
             return {}
     error_dict_X_S = {}
+    # Loop for checking models with set up alphas and betas in range(0,1) with step1 and step2
     for alpha in range(0, 100, int(step1 * 100)):
         for beta in range(0, 100, int(step2 * 100)):
             for exp in [True, False]:
                 for damp in [True, False]:
                     try:
                         threshold = 'No'
-                        # print(alpha, beta, exp, damp)
                         model = Holt(train, exponential=exp, damped_trend=damp, initialization_method="estimated").fit(
                             smoothing_level=alpha / 100, smoothing_trend=beta / 100)
                         fcast = model.forecast(len(test))
                         fcast_seas = []
                         for x, y in zip(fcast, seas):
                             fcast_seas.append(x * y)
+                        # Check std for prediction on Train and Test. If std is near with train/test target std,
+                        # we will add metrics to dictionary with model_name and score for train and test
                         if (statistics.pstdev(fcast_seas) >= statistics.pstdev(test) * (1 - 0.50)) \
                                 and (statistics.pstdev(model.fittedvalues) >= statistics.pstdev(train) * (1 - 0.50)):
                             threshold = 'Added'
@@ -219,6 +250,7 @@ def Holt_Seas(train, test, seas, step1, step2, df_modeling, modeling=0):
                                 mean_absolute_error(train, model.fittedvalues),
                                 mean_absolute_error(test, fcast_seas)]
 
+                        # Build-up Dataframe with representation of the process
                         if modeling == 1:
                             res_modeling = np.append(model.fittedvalues, fcast_seas)
                             df_modeling_1 = df_modeling.copy()
@@ -233,19 +265,28 @@ def Holt_Seas(train, test, seas, step1, step2, df_modeling, modeling=0):
                     except Exception as e:
                         print("Type of error is: ", e)
                         continue
+    # return dictionary {model_name: mae_score}
     return error_dict_X_S
 
 
-# Holt-Winters forecast
-def Holt_Winters(train, test, step1, step2, step3, df_modeling, modeling=0, seasonal_period=12):
+# Build-up Holt-Winters method models
+def Holt_Winters(train,  # Train dataset
+                 test,  # Test dataset
+                 step1,  # step for griding alpha parameter
+                 step2,  # step for griding beta parameter
+                 step3,  # step for griding gamma parameter
+                 df_modeling,  # Dataframe with representation of the process
+                 modeling=0,  # parameter for switching mode of representation (1 - turn on. 0 - turn off)
+                 seasonal_period=12):  # seasonal period
     print('Start Holt_Winters')
     error_dict_X_S = {}
+    # Loop for checking models with set up alphas, betas and gammas in range(0,1) with step1, step2, step3
     for alpha in range(0, 100, int(step1 * 100)):
         for beta in range(0, 100, int(step2 * 100)):
             for gamma in range(0, 100, int(step3 * 100)):
                 for tr in ['additive', 'multiplicative', None]:
                     for damp in [True, False]:
-                        for ss in ['additive', 'multiplicative', None]:
+                        for ss in [None]:
                             try:
                                 threshold = 'No'
                                 model = ExponentialSmoothing(train,
@@ -258,6 +299,8 @@ def Holt_Winters(train, test, step1, step2, step3, df_modeling, modeling=0, seas
                                                                    smoothing_trend=beta / 100,
                                                                    smoothing_seasonal=gamma / 100)
                                 fcast = model.forecast(len(test))
+                                # Check std for prediction on Train and Test. If std is near with train/test target std,
+                                # we will add metrics to dictionary with model_name and score for train and test
                                 if (statistics.pstdev(fcast) >= statistics.pstdev(test) * (1 - 0.50)) \
                                         and (
                                         statistics.pstdev(model.fittedvalues) >= statistics.pstdev(train) * (1 - 0.50)):
@@ -266,6 +309,7 @@ def Holt_Winters(train, test, step1, step2, step3, df_modeling, modeling=0, seas
                                                    + str(gamma / 100) + '/' + str(tr) + '/' + str(damp) +
                                                    '/' + str(ss)] = [mean_absolute_error(train, model.fittedvalues),
                                                                      mean_absolute_error(test, fcast)]
+                                # Build-up Dataframe with representation of the process
                                 if modeling == 1:
                                     res_modeling = np.append(model.fittedvalues, fcast)
                                     df_modeling_1 = df_modeling.copy()
@@ -282,13 +326,22 @@ def Holt_Winters(train, test, step1, step2, step3, df_modeling, modeling=0, seas
 
                             except (OverflowError, ValueError, IndexError, NotImplementedError, AssertionError):
                                 continue
+    # return dictionary {model_name: mae_score}
     return error_dict_X_S
 
 
-# Arima forecast
-def Arima(train, test, p_max, q_max, d_max, df_modeling, modeling=0):
+# # Build-up ARIMA method models
+def Arima(train,  # Train dataset
+          test,  # Test dataset
+          p_max,  # step for griding p parameter
+          q_max,  # step for griding q parameter
+          d_max,  # step for griding d parameter
+          df_modeling,  # Dataframe with representation of the process
+          modeling=0):  # parameter for switching mode of representation (1 - turn on. 0 - turn off)
+
     print('Start Arima')
     error_dict_X_S = {}
+    # Loop for checking models with set up p, q and d in range(0,max) with p_max, q_max, d_max
     for d in range(1, d_max + 1):
         for q in range(1, q_max + 1):
             for p in range(1, p_max + 1, 1):
@@ -296,7 +349,8 @@ def Arima(train, test, p_max, q_max, d_max, df_modeling, modeling=0):
                     threshold = 'No'
                     model = ARIMA(train, order=(p, q, d)).fit()
                     fcast = model.forecast(len(test))
-                    # print(fcast)
+                    # Check std for prediction on Train and Test. If std is near with train/test target std,
+                    # we will add metrics to dictionary with model_name and score for train and test
                     if (statistics.pstdev(fcast) >= statistics.pstdev(test) * (1 - 0.5)) \
                             and (statistics.pstdev(model.fittedvalues) >= statistics.pstdev(train) * (1 - 0.5)):
                         threshold = 'Added'
@@ -319,15 +373,18 @@ def Arima(train, test, p_max, q_max, d_max, df_modeling, modeling=0):
                     continue
                 except IndexError:
                     continue
+    # return dictionary {model_name: mae_score}
     return error_dict_X_S
 
 
-# Finding of best_params from error dictionaries
-def best_params_founder(err_dict, best_params):
+# Finding best_params from error dictionary
+def best_params_founder(err_dict,  # Error dictionary
+                        best_params):  # List of best parameters for every type of models
     if len(err_dict) > 0:
         init = sorted([x[0] for x in err_dict.values()])
         threshold = 0.2
         best_train_err = init[0] * (1 + threshold)
+        # Inintianlize list with only good score for train (not worse than % of best train score)
         init_1 = sorted([x[1] for x in err_dict.values() if x[0] <= best_train_err])
         for keys, values in err_dict.items():
             if (values[1] == init_1[0]) and (keys not in best_params):
@@ -337,10 +394,14 @@ def best_params_founder(err_dict, best_params):
     return best_params
 
 
-def best_models_fit(df, best_params, period, seasonal_period=12):
+def best_models_fit(df,  # Full dataset for prediction
+                    best_params,  # List with parameters of best models each type
+                    period,  # How many predictions we have to make
+                    seasonal_period=12):  # # seasonal period for Holt-Winters model
     res1 = []
     models = ['Smoothing', 'Holt', 'Holt-Winters', 'Arima']
     best_params_cor = []
+    # Build-up full list of models
     if len(best_params) < 4:
         for elem in models:
             d = len(best_params_cor)
@@ -351,6 +412,7 @@ def best_models_fit(df, best_params, period, seasonal_period=12):
                 best_params_cor.append('None_None')
         best_params = best_params_cor
 
+    #  If the first element id Smoothing model's parameters, initialize it. Else add 0 numbers
     if best_params[0].split("_")[0] == 'Smoothing':
         model_params = best_params[0].split("_")[1]
         model_smoothing = SimpleExpSmoothing(df, initialization_method="heuristic").fit(
@@ -361,6 +423,7 @@ def best_models_fit(df, best_params, period, seasonal_period=12):
         print('This one')
         res1.append([0 for x in range(len(df) + period + 1)])
 
+    #  If the second element id Holt model's parameters, initialize it. Else add 0 numbers
     if best_params[1].split("_")[0] == 'Holt':
         model_params = best_params[1].split("_")[1]
         model_holt = Holt(df, exponential=(False if model_params.split('/')[0] == 'False'
@@ -376,6 +439,7 @@ def best_models_fit(df, best_params, period, seasonal_period=12):
         print('This one')
         res1.append([0 for x in range(len(df) + period + 1)])
 
+    #  If the forth element id ARIMA model's parameters, initialize it. Else add 0 numbers
     if best_params[3].split("_")[0] == 'ARIMA':
         model_params = best_params[3].split("_")[1]
         try:
@@ -395,6 +459,7 @@ def best_models_fit(df, best_params, period, seasonal_period=12):
         print('This one')
         res1.append([0 for x in range(len(df) + period + 1)])
 
+    #  If the third element id ARIMA model's parameters, initialize it. Else add 0 numbers
     if best_params[2].split("_")[0] == 'Holt-Winters':
         model_params = best_params[2].split("_")[1]
         model_holt_winters = ExponentialSmoothing(df,
@@ -418,7 +483,9 @@ def best_models_fit(df, best_params, period, seasonal_period=12):
     return res1
 
 
-def define_best_model_test(best_params_X, best_params_Y):
+# Going through best parameters lists to define the best model on test score v.1
+def define_best_model_test(best_params_X,  # The first sample of model's parameters and scores list
+                           best_params_Y):  # The second sample of model's parameters and scores list
     best_score = -1
     best_model = "Unknown"
 
@@ -436,10 +503,13 @@ def define_best_model_test(best_params_X, best_params_Y):
             best_score = model_score
             best_model = model_name + "_corr"
             # print(best_model, best_score)
+    # return the best model's name
     return best_model
 
 
-def define_best_model_test_np(best_params_X, best_params_Y):
+# Going through best parameters lists to define the best model on test score v.2
+def define_best_model_test_np(best_params_X,  # The first sample of model's parameters and scores list
+                              best_params_Y):    # The second sample of model's parameters and scores list
     x = []
     for elem in best_params_X:
         x.append([elem.split("_")[0], float(elem.split("_")[2])])
@@ -448,18 +518,24 @@ def define_best_model_test_np(best_params_X, best_params_Y):
     np1 = np.array(x, dtype=object)
     if len(np1) > 1:
         np1 = np1[np1[:, 1].argsort()]
+    # return the best model's name
     return np1
 
 
-def connection_DB(time_connection, chain_list, category_list, status_name):
+# Connect to SQL database for extracting necessary samples of data for prediction loop
+def connection_DB(time_connection,  # Start time
+                  chain_list,  # List of necessary buyers
+                  category_list,  # List of necessary categories of goods
+                  status_name):  # Type of sales (if status_name=0, we will download all type of sales)
     CONNECTION_PATH = Path()
+    # Connection parameters are inside txt file
     FILENAME = "connection_DB.txt"
     CONNECTION_FILENAME = CONNECTION_PATH / FILENAME
     with open(CONNECTION_FILENAME) as f:
         lines = f.readlines()
     connect_str = ""
     for x in lines:
-        connect_str += x.replace('/n','')
+        connect_str += x.replace('/n', '')
     connect_str = " ".join(connect_str.split())
     print('Start', time_connection)
 
@@ -467,6 +543,7 @@ def connection_DB(time_connection, chain_list, category_list, status_name):
 
     print('Time of connection', datetime.now() - time_connection)
 
+    # Extracting full list of buyers and categories of goods in case when we will predict full data
     chain_fulllist = pd.read_sql("SELECT [id] FROM [PromoPlannerMVPPresident].[dbo].[_spr_address_cpg]",
                                  connection)
 
@@ -488,6 +565,7 @@ def connection_DB(time_connection, chain_list, category_list, status_name):
         category_str += str(x) + ','
     category_str = category_str[:-1] + ')'
 
+    # Extracting data from SQL database
     if status_name == 0:
         data = pd.read_sql(f"SELECT * FROM [dbo].[SalesInWeek] "
                            f"WHERE cpg_id in {chain_str} and l3_id in {category_str}",
@@ -503,6 +581,7 @@ def connection_DB(time_connection, chain_list, category_list, status_name):
 
     print(f"Was extracted {len(data)} string")
 
+    # Extracting table with years and id
     year_calendar = pd.read_sql("SELECT [id], [year] FROM [PromoPlannerMVPPresident].[dbo].[_spr_date_year]",
                                 connection)
 
@@ -515,6 +594,7 @@ def connection_DB(time_connection, chain_list, category_list, status_name):
     return data, year_calendar
 
 
+# Uploading predictions in SQL database
 def download_DB(df):
     CONNECTION_PATH = Path()
     FILENAME = "connection_DB.txt"
@@ -536,7 +616,13 @@ def download_DB(df):
         df.to_sql('forecast_g_raw', schema='dbo', con=cnn, if_exists='append', index=False)
 
 
-def main_prediction(chain_list, category_list, channel, time_connection, status_name=0):
+# Main prediction loop
+def main_prediction(chain_list,  # List of necessary buyers
+                    category_list,  # List of necessary categories of goods
+                    channel,  # List of sale channels (not use for now)
+                    time_connection,  # Start time
+                    status_name=0):  # Type of sales (if status_name=0, we will download all type of sales)
+    # Extracting data from SQL database
     data, year_calendar = connection_DB(time_connection,
                                         chain_list,
                                         category_list,
@@ -547,11 +633,13 @@ def main_prediction(chain_list, category_list, channel, time_connection, status_
     else:
         status_name_act = status_name
 
+    #  Some data preparation
     df_new_1 = data.loc[(data['chain_name'].notna()) | (data['l3_name'].notna())]
     df_new_1 = df_new_1[['year', 'year_id', 'month_id', 'volume', 'cpg_id', 'l3_id', 'cpg_name', 'l3_name']]
     chain_name = df_new_1.cpg_id.value_counts().index.to_list()
 
     for chain in chain_name:
+        # Build-up empty DataFrame for our predictions
         df_final_full = pd.DataFrame(columns=['l3_id', 'buyer_id', 'year_id', 'month_id', 'volume',
                                               'predict_smoothing_seas', 'predict_holt_seas',
                                               'predict_arima', 'predict_holt_wint', 'sellin_corr',
@@ -559,24 +647,25 @@ def main_prediction(chain_list, category_list, channel, time_connection, status_
                                               'predict_arima_corr', 'predict_holt_wint_corr',
                                               'date_upload', 'best_model_total', 'best_model', 'status_id',
                                               'best_model_value'])
+        # Extracting categories of goods list for current buyer
         l3_name = df_new_1[df_new_1.cpg_id == chain].l3_id.value_counts().index.to_list()
         print(l3_name)
 
-        # l3_name = [19.0, 18.0, 17.0, 21.0, 20.0, 15.0, 16.0, 14 .0, 13.0]
-        # print(l3_name)
         for l3 in l3_name:
             print(f'Start prediction {chain} for group {l3}')
-            # print(df_new_1)
 
+            # Some data preporation
             df_new_1_2 = df_new_1[(df_new_1.cpg_id == chain) & (df_new_1.l3_id == l3)]
             df_new_1_2 = df_new_1_2[['year', 'month_id', 'volume']]
             df_new_1_2 = df_new_1_2.groupby(by=['year', 'month_id'], as_index=False).sum()
             df_new_1_2 = df_new_1_2.astype({'year': np.int64, 'month_id': np.int64, 'volume': np.float64})
 
-            if len(df_new_1_2) < 3:
+            # If data is not enough for prediction, we go next
+            if len(df_new_1_2) < 4:
                 print("Not enough length of dataset - ", len(df_new_1_2))
                 continue
 
+            # Extrapolate our data on full year/month period with small values on months without sale
             df_new_1_2['Cal'] = df_new_1_2.apply(lambda var: str(int(var.year)) + '_' + str(int(var.month_id)), axis=1)
             cals = sample_calendar(df_new_1_2.year.min(),
                                    df_new_1_2[df_new_1_2.year == df_new_1_2.year.min()].month_id.min(),
@@ -592,26 +681,28 @@ def main_prediction(chain_list, category_list, channel, time_connection, status_
             df_new_1_2['Seas'] = df_new_1_2['month_id'].map(seasonal(df_new_1_2, 12))
 
             df_new_1_2 = df_new_1_2.sort_values(by=['year', 'month_id'], ascending=True)
-            print(df_new_1_2)
 
+            # If we don't have sales last N moths, we go next
             if no_sales_criteria(df_new_1_2.volume, 5):
                 print(f"No sales criteria cpg_id - {chain} and l3_id - {l3}")
                 continue
 
             df_new_1_2.loc[(df_new_1_2['volume'] <= 0), 'volume'] = 0.000001
 
-            print(df_new_1_2)
+            #print(df_new_1_2)
 
+            # Making Series for predictions
             X = df_new_1_2['volume']
             X = X.reset_index(drop=True)
 
+            # Copy our data and make corrections with outliers
             Y = df_new_1_2['volume'].copy()
             quan_res = quantile_range(Y)
             # sigma_res = three_sigma_borders(Y)
             Y[(Y.values < quan_res[0])] = quan_res[0]
             Y[(Y.values > quan_res[1])] = quan_res[1]
 
-            t = 1
+            t = 1 # except 1 month from dataset, cuz it can be not full else
             X_m = X[:-t]
             train_size = int(len(X_m) * 0.7)
             train_X, test_X = X_m[:train_size].to_list(), X_m[train_size:].to_list()
@@ -624,6 +715,7 @@ def main_prediction(chain_list, category_list, channel, time_connection, status_
             best_params_X = []
             best_params_Y = []
 
+            # Preparation for representation modeling, if it will be needed
             df_modeling = df_new_1_2.assign(set_type='Train')
             df_modeling.iloc[train_size:, 4] = 'Test'
             df_modeling = df_modeling.drop(['Seas'], axis=1)
@@ -643,9 +735,11 @@ def main_prediction(chain_list, category_list, channel, time_connection, status_
                 Holt_Winters(train_X, test_X, 0.2, 0.2, 0.2, df_modeling_X.iloc[:-t]),
                 best_params_X)
             best_params_founder(
-                Arima(train_X, test_X, 15, 2, 2, df_modeling_X.iloc[:-t]),
+                Arima(train_X, test_X, 12, 2, 2, df_modeling_X.iloc[:-t]),
                 best_params_X)
 
+            # If Y and X is equal we will not start prediction loop for Y.
+            # And set up best_models os equal best_models fro X
             if X_m.equals(Y_m):
                 print("No correction of dataset")
                 best_params_Y = best_params_X
@@ -661,7 +755,7 @@ def main_prediction(chain_list, category_list, channel, time_connection, status_
                     Holt_Winters(train_Y, test_Y, 0.2, 0.2, 0.2, df_modeling_Y.iloc[:-t]),
                     best_params_Y)
                 best_params_founder(
-                    Arima(train_Y, test_Y, 15, 2, 2, df_modeling_Y.iloc[:-t]),
+                    Arima(train_Y, test_Y, 12, 2, 2, df_modeling_Y.iloc[:-t]),
                     best_params_Y)
 
             print(f"Best models {chain} and {l3}: ", best_params_X)
@@ -678,6 +772,7 @@ def main_prediction(chain_list, category_list, channel, time_connection, status_
             else:
                 res_Y = best_models_fit(Y_m, best_params_Y, period)
 
+            # Build-up fact part of prediction dataset
             df_final = df_final.assign(predict_smoothing=res_X[0][0:len(df_final)])
             df_final = df_final.assign(predict_holt=res_X[1][0:len(df_final)])
             df_final = df_final.assign(predict_arima=res_X[2][0:len(df_final)])
@@ -693,6 +788,7 @@ def main_prediction(chain_list, category_list, channel, time_connection, status_
             df_final = df_final.assign(date_upload=time_connection)
             df_final = df_final.assign(status_id=status_name_act)
 
+            # Build-up prediction part of prediction dataset
             len_st = len(df_final)
 
             cur_Year = df_final.year.max()
@@ -725,19 +821,18 @@ def main_prediction(chain_list, category_list, channel, time_connection, status_
 
             df_final['Seas'] = df_final['month_id'].map(seasonal(df_new_1_2, 12))
 
+            # Apply seosonal coefficients for Smoothing and Holt model's predictions
             df_final['predict_smoothing_seas'] = df_final['Seas'] * df_final['predict_smoothing']
             df_final['predict_holt_seas'] = df_final['Seas'] * df_final['predict_holt']
 
             df_final['predict_smoothing_corr_seas'] = df_final['Seas'] * df_final['predict_smoothing_corr']
             df_final['predict_holt_corr_seas'] = df_final['Seas'] * df_final['predict_holt_corr']
 
-            # quan_res = quantile_range(df_new_1_2['volume'])
-
+            # Basic correction for prediction values
             for column in ['predict_smoothing', 'predict_holt', 'predict_arima',
                            'predict_smoothing_corr', 'predict_holt_corr', 'predict_arima_corr',
                            'predict_smoothing_seas', 'predict_holt_seas', 'predict_smoothing_corr_seas',
                            'predict_holt_corr_seas', 'predict_holt_wint', 'predict_holt_wint_corr']:
-                # df_final[column][(df_final[column].values < quan_res[0])] = quan_res[0]
                 df_final[column][(df_final[column].values < 0)] = 0
                 df_final[column][(df_final[column].values > 1000000000000)] = 1000000000000
 
@@ -752,7 +847,6 @@ def main_prediction(chain_list, category_list, channel, time_connection, status_
                  'predict_smoothing_corr_seas', 'predict_holt_corr_seas', 'predict_holt_wint_corr',
                  'predict_arima_corr', 'date_upload', 'status_id']]
 
-            # print(df_final)
             model_dict = {'Smoothing': 'predict_smoothing_seas',
                           'Holt': 'predict_holt_seas',
                           'ARIMA': 'predict_arima',
@@ -763,8 +857,9 @@ def main_prediction(chain_list, category_list, channel, time_connection, status_
                           'Holt-Winters_corr': 'predict_holt_wint_corr',
                           'Unknown': 'Unknown'
                           }
-            # best_model_df_1 = model_dict[define_best_model_test_np(best_params_X, best_params_Y)[0]]
-            # print("Best model test", best_model_df_1)
+
+            # Defining best model on test with some hand-made updates to business tast.
+            # Growth next year has to be hand limited (now it is not higher than 1.8 and not lower 0.4 to prev year
             last_year_index = max(len_st - t - 12, 0)
             last_year_volume = df_final[last_year_index:len_st - t].volume.sum()
 
@@ -783,6 +878,7 @@ def main_prediction(chain_list, category_list, channel, time_connection, status_
 
             print("Best model test updated", best_model_df_1)
 
+            # Defining best model on whole dataset
             df_final_st = df_final[:len_st]
             score = 0.
             best_model = 'Unknown'
@@ -849,288 +945,32 @@ def main_prediction(chain_list, category_list, channel, time_connection, status_
                                                'best_model_value',
                                                'predict_holt_wint',
                                                'predict_holt_wint_corr']]
-        # print(df_final_full_reorder)
+
+        # Write result to the file
         filename = time_connection.strftime("%d%m%y")
         chain = chain
         filename += "___" + str(chain) + ".csv"
         filename = "data/" + filename
         print(filename)
         df_final_full_reorder.to_csv(filename, mode='a', decimal=',', index=False)
-        download_DB(df_final_full_reorder)
 
-        # with engine.connect() as cnn:
-        #      df_final_full.to_sql('forecast_g_raw', schema='dbo', con=cnn, if_exists='append', index=False)
+        # Downloading result in SQL database
+        if len(df_final_full_reorder) > 0:
+            continue
+            # download_DB(df_final_full_reorder)
+
         print(f'Download {chain} was successful')
 
         print('Time of download full category prediction', datetime.now() - time_connection)
-        #     #     # sql_split_forecast = "EXEC split_forecast_g @DateToLoad=?"
-        #     #     # params = (time_connection)
-        #     #     # cursor.execute(sql_split_forecast, params)
-        #     print('Full time', datetime.now() - time_connection)
-
-    # connection.close()
-
-
-def main_prediction_new(chain_list, category_list, channel, time_connection, status_name=0):
-    if status_name == 0:
-        status_name_act = 3
-    else:
-        status_name_act = status_name
-
-    data = pd.read_csv('borchenko_test.csv', sep=';', decimal='.')
-    df_new_1 = data.loc[(data['chain_name'].notna()) | (data['l3_name'].notna())]
-    df_new_1 = df_new_1[['year', 'year_id', 'month_id', 'volume', 'cpg_id', 'l3_id', 'cpg_name', 'l3_name']]
-    chain_name = df_new_1.cpg_id.value_counts().index.to_list()
-    # print(chain_name)
-    # print(df_new_1)
-    for chain in chain_name:
-        df_final_full = pd.DataFrame(columns=['l3_id', 'buyer_id', 'year_id', 'month_id', 'volume',
-                                              'predict_smoothing_seas', 'predict_holt_seas',
-                                              'predict_arima', 'predict_holt_wint', 'sellin_corr',
-                                              'predict_smoothing_corr_seas', 'predict_holt_corr_seas',
-                                              'predict_arima_corr', 'predict_holt_wint_corr',
-                                              'date_upload', 'best_model_total', 'best_model', 'status_id'])
-        if len(category_list) == 0:
-            l3_name = df_new_1[df_new_1.cpg_id == chain].l3_id.value_counts().index.to_list()
-        else:
-            l3_name = category_list
-        print(l3_name)
-        # l3_name = [19.0, 18.0, 17.0, 21.0, 20.0, 15.0, 16.0, 14 .0, 13.0]
-        # print(l3_name)
-        for l3 in l3_name:
-            print(f'Start prediction {chain} for group {l3}')
-            print('Time ', time_connection)
-            # print(df_new_1)
-
-            df_new_1_2 = df_new_1[(df_new_1.cpg_id == chain) & (df_new_1.l3_id == l3)]
-            df_new_1_2 = df_new_1_2[['year', 'month_id', 'volume']]
-            df_new_1_2 = df_new_1_2.groupby(by=['year', 'month_id'], as_index=False).sum()
-            df_new_1_2 = df_new_1_2.astype({'year': np.int64, 'month_id': np.int64, 'volume': np.float64})
-            # print(df_new_1_2)
-            if len(df_new_1_2) < 3:
-                print("Not enough length of dataset - ", len(df_new_1_2))
-                continue
-
-            df_new_1_2['Cal'] = df_new_1_2.apply(lambda var: str(int(var.year)) + '_' + str(int(var.month_id)), axis=1)
-            cals = sample_calendar(df_new_1_2.year.min(),
-                                   df_new_1_2[df_new_1_2.year == df_new_1_2.year.min()].month_id.min(),
-                                   2024,
-                                   1)
-            # df_new_1_2.year.max(),
-            # df_new_1_2[df_new_1_2.year == df_new_1_2.year.max()].month_id.max())
-            df_new_1_2 = df_new_1_2.merge(cals, left_on='Cal', right_on=0, how='right')
-            df_new_1_2['year'] = df_new_1_2.apply(lambda var: int(var.Cal.split('_')[0]), axis=1)
-            df_new_1_2['month_id'] = df_new_1_2.apply(lambda var: int(var.Cal.split('_')[1]), axis=1)
-            df_new_1_2['volume'] = df_new_1_2['volume'].fillna(0)
-            df_new_1_2 = df_new_1_2.drop(['Cal', 0], axis=1)
-
-            df_new_1_2['Seas'] = df_new_1_2['month_id'].map(seasonal(df_new_1_2, 12))
-
-            df_new_1_2 = df_new_1_2.sort_values(by=['year', 'month_id'], ascending=True)
-
-            df_new_1_2.loc[(df_new_1_2['volume'] <= 0), 'volume'] = 0.000001
-
-            X = df_new_1_2['volume']
-            X = X.reset_index(drop=True)
-
-            Y = df_new_1_2['volume'].copy()
-            quan_res = quantile_range(Y)
-            # sigma_res = three_sigma_borders(Y)
-            Y[(Y.values < quan_res[0])] = quan_res[0]
-            Y[(Y.values > quan_res[1])] = quan_res[1]
-
-            t = 1
-            X_m = X[:-t]
-            train_size = int(len(X_m) * 0.75)
-            train_X, test_X = X_m[:train_size].to_list(), X_m[train_size:].to_list()
-
-            Y_m = Y[:-t]
-            train_Y, test_Y = Y_m[:train_size].to_list(), Y_m[train_size:].to_list()
-
-            Seas = df_new_1_2['Seas'].reset_index(drop=True).to_list()[-len(test_X) - t:-t]
-
-            best_params_X = []
-            best_params_Y = []
-
-            df_modeling = df_new_1_2.assign(set_type='Train')
-            df_modeling.iloc[train_size:, 4] = 'Test'
-            df_modeling = df_modeling.drop(['Seas'], axis=1)
-            df_modeling = df_modeling.assign(cpg=chain)
-            df_modeling = df_modeling.assign(l3=l3)
-            df_modeling_X = df_modeling.assign(correction='NO')
-            df_modeling_Y = df_modeling.assign(correction='YES')
-
-            best_params_founder(
-                SimpleSmooth_Seas(train_X, test_X, Seas, 0.05, df_modeling_X.iloc[:-t]),
-                best_params_X)
-            best_params_founder(
-                Holt_Seas(train_X, test_X, Seas, 0.1, 0.1, df_modeling_X.iloc[:-t]),
-                best_params_X)
-            best_params_founder(
-                Holt_Winters(train_X, test_X, 0.2, 0.2, 0.2, df_modeling_X.iloc[:-t]),
-                best_params_X)
-            best_params_founder(
-                Arima(train_X, test_X, 15, 2, 2, df_modeling_X.iloc[:-t]),
-                best_params_X)
-
-            best_params_founder(
-                SimpleSmooth_Seas(train_Y, test_Y, Seas, 0.05, df_modeling_Y.iloc[:-t]),
-                best_params_Y)
-            best_params_founder(
-                Holt_Seas(train_Y, test_Y, Seas, 0.1, 0.1, df_modeling_Y.iloc[:-t]),
-                best_params_Y)
-            best_params_founder(
-                Holt_Winters(train_Y, test_Y, 0.2, 0.2, 0.2, df_modeling_Y.iloc[:-t]),
-                best_params_Y)
-            best_params_founder(
-                Arima(train_Y, test_Y, 15, 2, 2, df_modeling_Y.iloc[:-t]),
-                best_params_Y)
-
-            print(best_params_X)
-            print(best_params_Y)
-            print("Temp total time ", datetime.now() - time_connection)
-
-            period = 18
-            df_final = df_new_1_2.copy()
-            df_final.drop('Seas', axis=1)
-            print(best_params_X)
-            print(best_params_Y)
-            res_X = best_models_fit(X_m, best_params_X, period)
-            res_Y = best_models_fit(Y_m, best_params_Y, period)
-
-            df_final = df_final.assign(predict_smoothing=res_X[0][0:len(df_final)])
-            df_final = df_final.assign(predict_holt=res_X[1][0:len(df_final)])
-            df_final = df_final.assign(predict_arima=res_X[2][0:len(df_final)])
-            df_final = df_final.assign(predict_holt_wint=res_X[3][0:len(df_final)])
-            df_final = df_final.assign(l3_id=l3)
-            df_final = df_final.assign(buyer_id=chain)
-            df_final = df_final.assign(region_id='')
-            df_final = df_final.assign(sellin_corr=list(Y.values))
-            df_final = df_final.assign(predict_smoothing_corr=res_Y[0][0:len(df_final)])
-            df_final = df_final.assign(predict_holt_corr=res_Y[1][0:len(df_final)])
-            df_final = df_final.assign(predict_arima_corr=res_Y[2][0:len(df_final)])
-            df_final = df_final.assign(predict_holt_wint_corr=res_Y[3][0:len(df_final)])
-            df_final = df_final.assign(date_upload=time_connection)
-            df_final = df_final.assign(status_id=status_name_act)
-
-            # print(df_final)
-
-            len_st = len(df_final)
-
-            cur_Year = df_final.year.max()
-            cur_Month = df_final.month_id.tail(1).values[0]
-            month = cur_Month
-            year = cur_Year
-            for i in range(period):
-                month = month + 1
-                if month > 12:
-                    month = 1
-                    year += 1
-                new_row = pd.Series({"year": year,
-                                     "month_id": month,
-                                     "volume": 0,
-                                     "predict_smoothing": res_X[0][len_st + i],
-                                     "predict_holt": res_X[1][len_st + i],
-                                     "predict_arima": res_X[2][len_st + i],
-                                     "predict_holt_wint": res_X[3][len_st + i],
-                                     "l3_id": l3,
-                                     "buyer_id": chain,
-                                     "region_id": '',
-                                     "sellin_corr": 0,
-                                     "predict_smoothing_corr": res_Y[0][len_st + i],
-                                     "predict_holt_corr": res_Y[1][len_st + i],
-                                     "predict_arima_corr": res_Y[2][len_st + i],
-                                     "predict_holt_wint_corr": res_Y[3][len_st + i],
-                                     "date_upload": time_connection,
-                                     "status_id": status_name_act})
-                df_final = df_final.append(new_row, ignore_index=True)
-
-            df_final['Seas'] = df_final['month_id'].map(seasonal(df_new_1_2, 12))
-            df_final['predict_smoothing_seas'] = df_final['Seas'] * df_final['predict_smoothing']
-            df_final['predict_holt_seas'] = df_final['Seas'] * df_final['predict_holt']
-
-            df_final['predict_smoothing_corr_seas'] = df_final['Seas'] * df_final['predict_smoothing_corr']
-            df_final['predict_holt_corr_seas'] = df_final['Seas'] * df_final['predict_holt_corr']
-
-            quan_res = quantile_range(df_new_1_2['volume'])
-
-            for column in ['predict_smoothing', 'predict_holt', 'predict_arima',
-                           'predict_smoothing_corr', 'predict_holt_corr', 'predict_arima_corr',
-                           'predict_smoothing_seas', 'predict_holt_seas', 'predict_smoothing_corr_seas',
-                           'predict_holt_corr_seas', 'predict_holt_wint', 'predict_holt_wint_corr']:
-                df_final[column][(df_final[column].values < quan_res[0])] = quan_res[0]
-                df_final[column][(df_final[column].values < 0)] = 0
-                df_final[column][(df_final[column].values > 1000000000000)] = 1000000000000
-
-            df_final = df_final.fillna(0)
-            # df_final = df_final.merge(year_calendar, left_on='year', right_on='year', how='left')
-            df_final = df_final.rename(columns={'year': 'year_id'})
-            df_final = df_final.drop(
-                ['predict_smoothing', 'predict_holt', 'predict_smoothing_corr', 'predict_holt_corr'], axis=1)
-            df_final = df_final[
-                ['buyer_id', 'l3_id', 'year_id', 'month_id', 'volume', 'predict_smoothing_seas',
-                 'predict_holt_seas', 'predict_arima', 'predict_holt_wint', 'sellin_corr',
-                 'predict_smoothing_corr_seas',
-                 'predict_holt_corr_seas', 'predict_arima_corr', 'predict_holt_wint_corr', 'date_upload', 'status_id']]
-
-            # print(df_final)
-            model_dict = {'Smoothing': 'predict_smoothing_seas',
-                          'Holt': 'predict_holt_seas',
-                          'ARIMA': 'predict_arima',
-                          'Holt-Winters': 'predict_holt_wint',
-                          'Smoothing_corr': 'predict_smoothing_corr_seas',
-                          'Holt_corr': 'predict_holt_corr_seas',
-                          'ARIMA_corr': 'predict_arima_corr',
-                          'Holt-Winters_corr': 'predict_holt_wint_corr',
-                          'Unknown': 'Unknown'
-                          }
-            best_model_df = model_dict[define_best_model_test(best_params_X, best_params_Y)]
-            print("Best model test", best_model_df)
-            df_final_st = df_final[:len_st]
-            score = 0.
-            best_model = 'Unknown'
-            for name in ['predict_smoothing_seas', 'predict_holt_seas', 'predict_arima', 'predict_holt_wint',
-                         'predict_smoothing_corr_seas', 'predict_holt_corr_seas', 'predict_arima_corr',
-                         'predict_holt_wint_corr']:
-                try:
-                    if score == 0.:
-                        best_model = name
-                        score = mean_squared_error(df_final_st.volume, df_final_st[name])
-                    if score > mean_squared_error(df_final_st.volume, df_final_st[name]):
-                        best_model = name
-                        score = mean_squared_error(df_final_st.volume, df_final_st[name])
-                except ValueError:
-                    continue
-            print("Best model total", best_model)
-            df_final['best_model_total'] = best_model
-            df_final['best_model'] = best_model_df
-
-            df_final_full = df_final_full.append(df_final)
-            print(df_final_full)
-            df_final_full.to_csv("1.csv")
-
-        df_final_full = df_final_full.astype({'l3_id': np.int64,
-                                              'buyer_id': np.int64,
-                                              'year_id': np.int64,
-                                              'month_id': np.int64,
-                                              'volume': np.float64,
-                                              'predict_smoothing_seas': np.float64,
-                                              'predict_holt_seas': np.float64,
-                                              'predict_arima': np.float64,
-                                              'predict_holt_wint': np.float64,
-                                              'sellin_corr': np.float64,
-                                              'predict_smoothing_corr_seas': np.float64,
-                                              'predict_holt_corr_seas': np.float64,
-                                              'predict_arima_corr': np.float64,
-                                              'predict_holt_wint_corr': np.float64,
-                                              'date_upload': np.datetime64,
-                                              'best_model_total': np.str_,
-                                              'best_model': np.str_,
-                                              'status_id': np.int64})
-
-        print(df_final_full)
+        # Turning on SQL procedure
+        # sql_split_forecast = "EXEC split_forecast_g @DateToLoad=?"
+        # params = (time_connection)
+        # cursor.execute(sql_split_forecast, params)
+        print('Full time', datetime.now() - time_connection)
 
 
+
+# Developing of prediction loop for weeks dataset (in process now)
 def main_prediction_week(df, coef_smoothing, filling_calendar='yes', start_period=0, end_period=datetime.now()):
     pd.set_option('display.max_columns', None, 'display.width', None, 'display.max_rows', None)
     # l3_list = df.l3_id.value_counts().index.to_list()
@@ -1397,34 +1237,12 @@ def main_prediction_week(df, coef_smoothing, filling_calendar='yes', start_perio
 
 # Press the green button in the gutter to run the script.
 if __name__ == '__main__':
-    # E-COM CORP [2, 4, 226, 232, 336, 697, 737, 854, 920, 921, 1563, 1704]
-    pass
-    # 881
-    # print(datetime.now())
+
     date_time_obj = datetime.strptime('2024-03-19 00:00:00.000', '%Y-%m-%d %H:%M:%S.%f')
     # date_time_obj = datetime.now()
-    # print(date_time_obj)
-
-    connection_DB(date_time_obj, [36], [35], 0)
-
-    # main_prediction_week(pd.read_csv('week_test.csv', sep=';', decimal='.'), 1, 'yes')
-
-    # best_param_X = ['Smoothing_0.4_7.493132294020593', 'Holt_False/True/0.6/0.2_6.308673107645095', 'Holt-Winters_0.8/0.8/0.0/additive/False/None_30.961855352084655', 'ARIMA_7/1/2_68.74928619299581']
-    # best_param_Y = ['Smoothing_0.2_6.318680710760621', 'Holt_False/False/0.6/0.3_6.2563737480204775', 'Holt-Winters_0.8/0.8/0.0/additive/False/None_29.753157013523207', 'ARIMA_7/1/2_47.72379799766148']
-
-    # print(define_best_model_test(best_param_X, best_param_Y))
-    # print(define_best_model_test_np(best_param_X, best_param_Y))
-
-    # main_prediction(
-    #     chain_list=[36,226,232,237,239,240,247,251,256,272,279,299,303,323,331,335,364,392,397,449,464,522,523,538,580,585,586,617,655,660,662,697,737,854,920,921,1550,1555,1563,1688,1689,1704,1719,2745],
-    #     category_list=[],
-    #     channel=38,
-    #     time_connection=date_time_obj,
-    #     status_name=0)
-    #
-    # main_prediction(
-    #     chain_list=[36,226,232,237,239,240,247,251,256,272,279,299,303,323,331,335,364,392,397,449,464,522,523,538,580,585,586,617,655,660,662,697,737,854,920,921,1550,1555,1563,1688,1689,1704,1719,2745],
-    #     category_list=[],
-    #     channel=38,
-    #     time_connection=date_time_obj,
-    #     status_name=2)
+    main_prediction(
+        chain_list=[2],
+        category_list=[24],
+        channel=38,
+        time_connection=date_time_obj,
+        status_name=2)

@@ -12,17 +12,17 @@ class Form(BaseModel):
     channel: int
 
 
-@app.get('/status')
+@app.get('/status') # get status of service
 def status():
     return "My status is OK!!!"
 
 
-@app.get('/version')
+@app.get('/version') # get version of main prediction algo
 def version():
     return current_version()
 
 
-@app.post('/predict')
+@app.post('/predict') # start full algo for total data and status_name = Regular
 def predict(mask: Form):
     cur_time = datetime.now()
     main_prediction(chain_list=mask.chain_list,
@@ -39,7 +39,7 @@ def predict(mask: Form):
     return f"Successful with buyers {mask.chain_list}, categories {mask.category_list} and channels {mask.channel}"
 
 
-@app.post('/predict_regular')
+@app.post('/predict_regular') # start full algo for data only with status_name = Regular
 def predict(mask: Form):
     cur_time = datetime.now()
     main_prediction(chain_list=mask.chain_list,
