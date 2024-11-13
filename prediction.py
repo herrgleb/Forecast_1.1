@@ -485,7 +485,7 @@ def best_models_fit(df,  # Full dataset for prediction
         fcast_holt_winters = model_holt_winters.forecast(period + 1)
         res1.append(list(model_holt_winters.fittedvalues) + list(fcast_holt_winters))
     else:
-        print('No Holt-Winters model')
+        print('No Holt-Winters models')
         res1.append([0 for x in range(len(df) + period + 1)])
 
     return res1
