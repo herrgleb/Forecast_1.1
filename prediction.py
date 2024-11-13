@@ -290,9 +290,9 @@ def Holt_Winters(train,  # Train dataset
     for alpha in range(0, 100, int(step1 * 100)):
         for beta in range(0, 100, int(step2 * 100)):
             for gamma in range(0, 100, int(step3 * 100)):
-                for tr in ['additive', 'multiplicative', None]:
+                for tr in ['add', 'mul', None]:
                     for damp in [True, False]:
-                        for ss in [None]:
+                        for ss in ['add', 'mul']:
                             try:
                                 threshold = 'No'
                                 model = ExponentialSmoothing(train,
@@ -390,7 +390,7 @@ def best_params_founder(err_dict,  # Error dictionary
                         best_params):  # List of the best parameters for every type of models
     if len(err_dict) > 0:
         init = sorted([x[0] for x in err_dict.values()])
-        threshold = 0.2
+        threshold = 0.25
         best_train_err = init[0] * (1 + threshold)
         # Initialize list with only good score for train (not worse than % of best train score)
         init_1 = sorted([x[1] for x in err_dict.values() if x[0] <= best_train_err])
@@ -407,7 +407,7 @@ def best_models_fit(df,  # Full dataset for prediction
                     period,  # How many predictions we have to make
                     seasonal_period=12):  # # seasonal period for Holt-Winters model
     res1 = []
-    models = ['Smoothing', 'Holt', 'Holt-Winters', 'Arima']
+    models = ['Smoothing', 'Holt', 'Holt-Winters', 'ARIMA']
     best_params_cor = []
     # Build-up full list of models
     if len(best_params) < 4:
@@ -428,7 +428,7 @@ def best_models_fit(df,  # Full dataset for prediction
         fcast_smoothing = model_smoothing.forecast(period)
         res1.append([0] + list(model_smoothing.fittedvalues) + list(fcast_smoothing))
     else:
-        print('This one')
+        print('No Smoothing model')
         res1.append([0 for x in range(len(df) + period + 1)])
 
     #  If the second element id Holt model's parameters, initialize it. Else add 0 numbers
@@ -444,7 +444,7 @@ def best_models_fit(df,  # Full dataset for prediction
         fcast_holt = model_holt.forecast(period)
         res1.append([0] + list(model_holt.fittedvalues) + list(fcast_holt))
     else:
-        print('This one')
+        print('No Holt model')
         res1.append([0 for x in range(len(df) + period + 1)])
 
     #  If the forth element id ARIMA model's parameters, initialize it. Else add 0 numbers
@@ -464,7 +464,7 @@ def best_models_fit(df,  # Full dataset for prediction
             print("Something is not good")
             res1.append([0 for x in range(len(df) + period + 1)])
     else:
-        print('This one')
+        print('No ARIMA model')
         res1.append([0 for x in range(len(df) + period + 1)])
 
     #  If the third element id ARIMA model's parameters, initialize it. Else add 0 numbers
@@ -485,7 +485,7 @@ def best_models_fit(df,  # Full dataset for prediction
         fcast_holt_winters = model_holt_winters.forecast(period + 1)
         res1.append(list(model_holt_winters.fittedvalues) + list(fcast_holt_winters))
     else:
-        print('This one')
+        print('No Holt-Winters model')
         res1.append([0 for x in range(len(df) + period + 1)])
 
     return res1
@@ -710,7 +710,7 @@ def main_prediction(chain_list,  # List of necessary buyers
 
             t = 1  # except 1 month from dataset, cuz it can be not full else
             X_m = X[:-t]
-            train_size = int(len(X_m) * 0.7)
+            train_size = int(len(X_m) * 0.75)
             train_X, test_X = X_m[:train_size].to_list(), X_m[train_size:].to_list()
 
             Y_m = Y[:-t]
@@ -965,7 +965,7 @@ def main_prediction(chain_list,  # List of necessary buyers
         filename += "___" + str(file_tag) + ".csv"
         filename = "data/" + filename
         print(filename)
-        df_final_full_reorder.to_csv(filename, mode='a', decimal=',', index=False)
+        df_final_full_reorder.to_csv(filename, decimal=',', index=False)
 
         # Downloading result in SQL database
         if len(df_final_full_reorder) > 0 and download_flag == 1:
@@ -1252,12 +1252,12 @@ def main_prediction_week(df, coef_smoothing, filling_calendar='yes', start_perio
 if __name__ == '__main__':
 
     date_time_obj = datetime.strptime('2024-10-17 00:00:00.000', '%Y-%m-%d %H:%M:%S.%f')
-    #date_time_obj = datetime.now()
+    date_time_obj = datetime.now()
     main_prediction(
-        chain_list=[7033, 7061, 7084, 7189],
-        category_list=[],
+        chain_list=[7011],
+        category_list=[189],
         channel=38,
         time_connection=date_time_obj,
-        status_name=2,
+        status_name=0,
         sales_criteria=6,
         download_flag=0)
