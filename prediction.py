@@ -26,7 +26,7 @@ pd.set_option('display.width', 1000)
 
 # Current version of project
 def current_version():
-    return "Forecast_3_models.ver_1.29"
+    return "Forecast_3_models.ver_1.34"
 
 
 # Function for defining quantile range to find outliers
@@ -89,7 +89,7 @@ def sample_calendar(start_year: int,
     for y in range(start_year, final_year + 1):
         if y == start_year:
             s = start_month
-        elif y == final_year:
+        if y == final_year:
             f = final_month
         for x in range(s, f + 1):
             res.append([str(y) + '_' + str(x)])
@@ -163,8 +163,10 @@ def SimpleSmooth_Seas(train,  # Train dataset
                 fcast_seas.append(x * y)
             # Check std for prediction on Train and Test. If std is near with train/test target std, we will add metrics
             # to dictionary with model_name and score for train and test
-            if (statistics.pstdev(fcast_seas) >= statistics.pstdev(test) * (1 - 0.50)) and \
-                    (statistics.pstdev(model.fittedvalues) >= statistics.pstdev(train) * (1 - 0.50)):
+            if (statistics.pstdev(fcast_seas) / statistics.mean(fcast_seas) >=
+                statistics.pstdev(test) / statistics.mean(test) * (1 - 0.5)) and \
+                    (statistics.pstdev(model.fittedvalues) / statistics.mean(model.fittedvalues) >=
+                     statistics.pstdev(train) / statistics.mean(train) * (1 - 0.5)):
                 threshold = 'Added'
                 error_dict_X_S['Smoothing_' + str(alpha / 100)] = [
                     mean_absolute_error(train, model.fittedvalues),
@@ -179,34 +181,37 @@ def SimpleSmooth_Seas(train,  # Train dataset
                 df_modeling_1 = df_modeling_1.assign(test_error=mean_absolute_error(test, fcast_seas))
                 df_modeling_1 = df_modeling_1.assign(threshold=threshold)
                 df_modeling_1.to_csv("Modeling.csv", mode="a")
-        except ValueError:
-            print("Value error. Alpha level: ", alpha / 100)
+        except Exception as e:
             continue
     # Check model with estimated method of initialization
-    threshold = 'No'
-    model = SimpleExpSmoothing(train, initialization_method="estimated").fit()
-    fcast = model.forecast(len(test))
-    fcast_seas = []
-    for x, y in zip(fcast, seas):
-        fcast_seas.append(x * y)
-    # Check std
-    if (statistics.pstdev(fcast_seas) >= statistics.pstdev(test) * (1 - 0.50)) and \
-            (statistics.pstdev(model.fittedvalues) >= statistics.pstdev(train) * (1 - 0.50)):
-        threshold = 'Added'
-        error_dict_X_S['Smoothing_' + str(model.model.params["smoothing_level"])] = [
-            mean_absolute_error(train, model.fittedvalues),
-            mean_absolute_error(test, fcast_seas)]
-    # Build-up Dataframe with representation of the process
-    if modeling == 1:
-        res_modeling = np.append(model.fittedvalues, fcast_seas)
-        df_modeling_1 = df_modeling.copy()
-        df_modeling_1 = df_modeling_1.assign(prediction=res_modeling)
-        df_modeling_1 = df_modeling_1.assign(parameters='Smoothing_' + str(model.model.params["smoothing_level"]))
-        df_modeling_1 = df_modeling_1.assign(train_error=mean_absolute_error(train, model.fittedvalues))
-        df_modeling_1 = df_modeling_1.assign(test_error=mean_absolute_error(test, fcast_seas))
-        df_modeling_1 = df_modeling_1.assign(threshold=threshold)
-        df_modeling_1.to_csv("Modeling.csv", mode="a")
-
+        try:
+            threshold = 'No'
+            model = SimpleExpSmoothing(train, initialization_method="estimated").fit()
+            fcast = model.forecast(len(test))
+            fcast_seas = []
+            for x, y in zip(fcast, seas):
+                fcast_seas.append(x * y)
+            # Check std
+            if (statistics.pstdev(fcast_seas) / statistics.mean(fcast_seas) >=
+                statistics.pstdev(test) / statistics.mean(test) * (1 - 0.5)) and \
+                    (statistics.pstdev(model.fittedvalues) / statistics.mean(model.fittedvalues) >=
+                     statistics.pstdev(train) / statistics.mean(train) * (1 - 0.5)):
+                threshold = 'Added'
+                error_dict_X_S['Smoothing_' + str(model.model.params["smoothing_level"])] = [
+                    mean_absolute_error(train, model.fittedvalues),
+                    mean_absolute_error(test, fcast_seas)]
+            # Build-up Dataframe with representation of the process
+            if modeling == 1:
+                res_modeling = np.append(model.fittedvalues, fcast_seas)
+                df_modeling_1 = df_modeling.copy()
+                df_modeling_1 = df_modeling_1.assign(prediction=res_modeling)
+                df_modeling_1 = df_modeling_1.assign(parameters='Smoothing_' + str(model.model.params["smoothing_level"]))
+                df_modeling_1 = df_modeling_1.assign(train_error=mean_absolute_error(train, model.fittedvalues))
+                df_modeling_1 = df_modeling_1.assign(test_error=mean_absolute_error(test, fcast_seas))
+                df_modeling_1 = df_modeling_1.assign(threshold=threshold)
+                df_modeling_1.to_csv("Modeling.csv", mode="a")
+        except Exception as e:
+            continue
     # return dictionary {model_name: mae_score}
     return error_dict_X_S
 
@@ -242,8 +247,10 @@ def Holt_Seas(train,  # Train dataset
                             fcast_seas.append(x * y)
                         # Check std for prediction on Train and Test. If std is near with train/test target std,
                         # we will add metrics to dictionary with model_name and score for train and test
-                        if (statistics.pstdev(fcast_seas) >= statistics.pstdev(test) * (1 - 0.50)) \
-                                and (statistics.pstdev(model.fittedvalues) >= statistics.pstdev(train) * (1 - 0.50)):
+                        if (statistics.pstdev(fcast_seas) / statistics.mean(fcast_seas) >=
+                            statistics.pstdev(test) / statistics.mean(test) * (1 - 0.5)) and \
+                                (statistics.pstdev(model.fittedvalues) / statistics.mean(model.fittedvalues) >=
+                                 statistics.pstdev(train) / statistics.mean(train) * (1 - 0.5)):
                             threshold = 'Added'
                             error_dict_X_S['Holt_' + str(exp) + '/' + str(damp) + '/' + str(alpha / 100) + '/' + str(
                                 beta / 100)] = [
@@ -263,7 +270,6 @@ def Holt_Seas(train,  # Train dataset
                             df_modeling_1 = df_modeling_1.assign(threshold=threshold)
                             df_modeling_1.to_csv("Modeling.csv", mode="a")
                     except Exception as e:
-                        print("Type of error is: ", e)
                         continue
     # return dictionary {model_name: mae_score}
     return error_dict_X_S
@@ -301,9 +307,10 @@ def Holt_Winters(train,  # Train dataset
                                 fcast = model.forecast(len(test))
                                 # Check std for prediction on Train and Test. If std is near with train/test target std,
                                 # we will add metrics to dictionary with model_name and score for train and test
-                                if (statistics.pstdev(fcast) >= statistics.pstdev(test) * (1 - 0.50)) \
-                                        and (
-                                        statistics.pstdev(model.fittedvalues) >= statistics.pstdev(train) * (1 - 0.50)):
+                                if (statistics.pstdev(fcast) / statistics.mean(fcast) >=
+                                    statistics.pstdev(test) / statistics.mean(test) * (1 - 0.5)) and \
+                                        (statistics.pstdev(model.fittedvalues) / statistics.mean(model.fittedvalues) >=
+                                         statistics.pstdev(train) / statistics.mean(train) * (1 - 0.5)):
                                     threshold = 'Added'
                                     error_dict_X_S['Holt-Winters_' + str(alpha / 100) + '/' + str(beta / 100) + '/'
                                                    + str(gamma / 100) + '/' + str(tr) + '/' + str(damp) +
@@ -324,7 +331,7 @@ def Holt_Winters(train,  # Train dataset
                                     df_modeling_1 = df_modeling_1.assign(threshold=threshold)
                                     df_modeling_1.to_csv("Modeling.csv", mode="a")
 
-                            except (OverflowError, ValueError, IndexError, NotImplementedError, AssertionError):
+                            except Exception as e:
                                 continue
     # return dictionary {model_name: mae_score}
     return error_dict_X_S
@@ -351,8 +358,10 @@ def Arima(train,  # Train dataset
                     fcast = model.forecast(len(test))
                     # Check std for prediction on Train and Test. If std is near with train/test target std,
                     # we will add metrics to dictionary with model_name and score for train and test
-                    if (statistics.pstdev(fcast) >= statistics.pstdev(test) * (1 - 0.5)) \
-                            and (statistics.pstdev(model.fittedvalues) >= statistics.pstdev(train) * (1 - 0.5)):
+                    if (statistics.pstdev(fcast) / statistics.mean(fcast) >=
+                        statistics.pstdev(test) / statistics.mean(test) * (1 - 0.5)) and \
+                            (statistics.pstdev(model.fittedvalues) / statistics.mean(model.fittedvalues) >=
+                             statistics.pstdev(train) / statistics.mean(train) * (1 - 0.5)):
                         threshold = 'Added'
                         error_dict_X_S['ARIMA_' + str(p) + '/' + str(q) + '/' + str(d)] = [
                             mean_absolute_error(train, model.fittedvalues),
@@ -369,10 +378,9 @@ def Arima(train,  # Train dataset
                         df_modeling_1 = df_modeling_1.assign(threshold=threshold)
                         df_modeling_1.to_csv("Modeling.csv", mode="a")
 
-                except np.linalg.LinAlgError:
+                except Exception as e:
                     continue
-                except IndexError:
-                    continue
+
     # return dictionary {model_name: mae_score}
     return error_dict_X_S
 
@@ -544,10 +552,10 @@ def connection_DB(time_connection,  # Start time
     print('Time of connection', datetime.now() - time_connection)
 
     # Extracting full list of buyers and categories of goods in case when we will predict full data
-    chain_fulllist = pd.read_sql("SELECT [id] FROM [PromoPlannerMVPPresident].[dbo].[_spr_address_cpg]",
+    chain_fulllist = pd.read_sql("SELECT [id] FROM [MVPPresident].[dbo].[_spr_address_cpg]",
                                  connection)
 
-    category_fulllist = pd.read_sql("SELECT [id] FROM [PromoPlannerMVPPresident].[dbo].[_spr_sku_l3]",
+    category_fulllist = pd.read_sql("SELECT [id] FROM [MVPPresident].[dbo].[_spr_sku_ppg]",
                                     connection)
 
     if len(chain_list) < 1:
@@ -568,11 +576,11 @@ def connection_DB(time_connection,  # Start time
     # Extracting data from SQL database
     if status_name == 0:
         data = pd.read_sql(f"SELECT * FROM [dbo].[SalesInWeek] "
-                           f"WHERE cpg_id in {chain_str} and l3_id in {category_str}",
+                           f"WHERE cpg_id in {chain_str} and ppg_id in {category_str}",
                            connection)
     elif status_name in (1, 2):
         data = pd.read_sql(f"SELECT * FROM [dbo].[SalesInWeek] "
-                           f"WHERE cpg_id in {chain_str} and l3_id in {category_str}"
+                           f"WHERE cpg_id in {chain_str} and ppg_id in {category_str}"
                            f"and status_id = {status_name}",
                            connection)
     else:
@@ -582,7 +590,7 @@ def connection_DB(time_connection,  # Start time
     print(f"Was extracted {len(data)} string")
 
     # Extracting table with years and id
-    year_calendar = pd.read_sql("SELECT [id], [year] FROM [PromoPlannerMVPPresident].[dbo].[_spr_date_year]",
+    year_calendar = pd.read_sql("SELECT [id], [year] FROM [MVPPresident].[dbo].[_spr_date_year]",
                                 connection)
 
     year_calendar = year_calendar.astype({'id': np.int64, 'year': np.int64})
@@ -621,13 +629,14 @@ def main_prediction(chain_list,  # List of necessary buyers
                     category_list,  # List of necessary categories of goods
                     channel,  # List of sale channels (not use for now)
                     time_connection,  # Start time
-                    status_name=0):  # Type of sales (if status_name=0, we will download all type of sales)
+                    status_name=0,  # Type of sales (if status_name=0, we will download all type of sales)
+                    sales_criteria=6,
+                    download_flag=1):
     # Extracting data from SQL database
     data, year_calendar = connection_DB(time_connection,
                                         chain_list,
                                         category_list,
                                         status_name)
-
     if status_name == 0:
         status_name_act = 3
     else:
@@ -635,7 +644,8 @@ def main_prediction(chain_list,  # List of necessary buyers
 
     #  Some data preparation
     df_new_1 = data.loc[(data['chain_name'].notna()) | (data['l3_name'].notna())]
-    df_new_1 = df_new_1[['year', 'year_id', 'month_id', 'volume', 'cpg_id', 'l3_id', 'cpg_name', 'l3_name']]
+    df_new_1 = df_new_1[['year', 'year_id', 'month_id', 'volume', 'cpg_id', 'ppg_id', 'cpg_name', 'ppg_name']]
+    df_new_1 = df_new_1.rename(columns={'ppg_id': 'l3_id'})
     chain_name = df_new_1.cpg_id.value_counts().index.to_list()
 
     for chain in chain_name:
@@ -646,11 +656,10 @@ def main_prediction(chain_list,  # List of necessary buyers
                                               'predict_smoothing_corr_seas', 'predict_holt_corr_seas',
                                               'predict_arima_corr', 'predict_holt_wint_corr',
                                               'date_upload', 'best_model_total', 'best_model', 'status_id',
-                                              'best_model_value'])
+                                              'best_model_value', 'predict_unknown'])
         # Extracting categories of goods list for current buyer
         l3_name = df_new_1[df_new_1.cpg_id == chain].l3_id.value_counts().index.to_list()
         print(l3_name)
-
         for l3 in l3_name:
             print(f'Start prediction {chain} for group {l3}')
 
@@ -661,17 +670,16 @@ def main_prediction(chain_list,  # List of necessary buyers
             df_new_1_2 = df_new_1_2.astype({'year': np.int64, 'month_id': np.int64, 'volume': np.float64})
 
             # If data is not enough for prediction, we go next
-            if len(df_new_1_2) < 4:
-                print("Not enough length of dataset - ", len(df_new_1_2))
-                continue
+            # if len(df_new_1_2) < 4:
+            #     print("Not enough length of dataset - ", len(df_new_1_2))
+            #     continue
 
             # Extrapolate our data on full year/month period with small values on months without sale
             df_new_1_2['Cal'] = df_new_1_2.apply(lambda var: str(int(var.year)) + '_' + str(int(var.month_id)), axis=1)
             cals = sample_calendar(df_new_1_2.year.min(),
                                    df_new_1_2[df_new_1_2.year == df_new_1_2.year.min()].month_id.min(),
                                    2024,
-                                   3)
-
+                                   10)
             df_new_1_2 = df_new_1_2.merge(cals, left_on='Cal', right_on=0, how='right')
             df_new_1_2['year'] = df_new_1_2.apply(lambda var: int(var.Cal.split('_')[0]), axis=1)
             df_new_1_2['month_id'] = df_new_1_2.apply(lambda var: int(var.Cal.split('_')[1]), axis=1)
@@ -681,13 +689,13 @@ def main_prediction(chain_list,  # List of necessary buyers
             df_new_1_2['Seas'] = df_new_1_2['month_id'].map(seasonal(df_new_1_2, 12))
 
             df_new_1_2 = df_new_1_2.sort_values(by=['year', 'month_id'], ascending=True)
-
             # If we don't have sales last N moths, we go next
-            if no_sales_criteria(df_new_1_2.volume, 5):
+            if no_sales_criteria(df_new_1_2.volume, sales_criteria):
                 print(f"No sales criteria cpg_id - {chain} and l3_id - {l3}")
                 continue
 
             df_new_1_2.loc[(df_new_1_2['volume'] <= 0), 'volume'] = 0.000001
+
 
             # Making Series for predictions
             X = df_new_1_2['volume']
@@ -759,7 +767,7 @@ def main_prediction(chain_list,  # List of necessary buyers
             print(f"Best models {chain} and {l3}: ", best_params_X)
             print(f"Best models {chain} and {l3} corr: ", best_params_Y)
 
-            period = 18
+            period = 14
             df_final = df_new_1_2.copy()
             df_final.drop('Seas', axis=1)
 
@@ -859,15 +867,17 @@ def main_prediction(chain_list,  # List of necessary buyers
             # Defining best model on test with some hand-made updates to business task
             # Growth next year has to be hand limited (now it is not higher than 1.8 and not lower 0.4 to prev year
             last_year_index = max(len_st - t - 12, 0)
+
             last_year_volume = df_final[last_year_index:len_st - t].volume.sum()
 
             best_model_df_1 = 'Unknown'
 
+            len_of_last_year = len(df_final[last_year_index:len_st - t])
             for bm in define_best_model_test_np(best_params_X, best_params_Y):
                 model_ = model_dict[bm[0]]
-                next_year_volume = df_final[len_st - t:len_st - t + 12][model_].sum()
+                next_year_volume = df_final[len_st - t:len_st - t + len_of_last_year][model_].sum()
                 print(f"Growth with model {model_} is {next_year_volume / last_year_volume}")
-                if ((next_year_volume / last_year_volume > 1.8 or next_year_volume / last_year_volume < 0.4) or
+                if ((next_year_volume / last_year_volume > 1.8 or next_year_volume / last_year_volume < 0.6) or
                         next_year_volume == 0):
                     continue
                 else:
@@ -875,7 +885,6 @@ def main_prediction(chain_list,  # List of necessary buyers
                     break
 
             print("Best model test updated", best_model_df_1)
-
             # Defining best model on whole dataset
             df_final_st = df_final[:len_st]
             score = 0.
@@ -895,10 +904,13 @@ def main_prediction(chain_list,  # List of necessary buyers
 
             df_final['best_model_total'] = best_model
             df_final['best_model'] = best_model_df_1
+            df_final['predict_unknown'] = 0
+            unknown_index = max(len_st - t - 6, 0)
 
             if best_model_df_1 == 'Unknown':
-                last_year_mean = df_final[last_year_index:len_st - t].volume.mean()
+                last_year_mean = df_final[unknown_index:len_st - t].volume.mean()
                 df_final['best_model_value'] = last_year_mean
+                df_final['predict_unknown'] = last_year_mean
             else:
                 df_final['best_model_value'] = df_final[best_model_df_1]
 
@@ -922,7 +934,8 @@ def main_prediction(chain_list,  # List of necessary buyers
                                               'best_model_total': np.str_,
                                               'best_model': np.str_,
                                               'status_id': np.int64,
-                                              'best_model_value': np.float64})
+                                              'best_model_value': np.float64,
+                                              'predict_unknown': np.float64})
 
         df_final_full_reorder = df_final_full[['buyer_id',
                                                'l3_id',
@@ -942,20 +955,22 @@ def main_prediction(chain_list,  # List of necessary buyers
                                                'best_model_total',
                                                'best_model_value',
                                                'predict_holt_wint',
-                                               'predict_holt_wint_corr']]
+                                               'predict_holt_wint_corr',
+                                               'predict_unknown'
+                                               ]]
 
         # Write result to the file
         filename = time_connection.strftime("%d%m%y")
-        chain = chain
-        filename += "___" + str(chain) + ".csv"
+        file_tag = 'result'
+        filename += "___" + str(file_tag) + ".csv"
         filename = "data/" + filename
         print(filename)
         df_final_full_reorder.to_csv(filename, mode='a', decimal=',', index=False)
 
         # Downloading result in SQL database
-        if len(df_final_full_reorder) > 0:
-            continue
-            # download_DB(df_final_full_reorder)
+        if len(df_final_full_reorder) > 0 and download_flag == 1:
+            # continue
+            download_DB(df_final_full_reorder)
 
         print(f'Download {chain} was successful')
 
@@ -1004,7 +1019,7 @@ def main_prediction_week(df, coef_smoothing, filling_calendar='yes', start_perio
             calendar = sample_calendar_week(df_1.year.min(),
                                             df_1[df_1.year == df_1.year.min()].week.min(),
                                             2024,
-                                            3)
+                                            6)
 
             # def
             if filling_calendar == 'yes':
@@ -1231,15 +1246,18 @@ def main_prediction_week(df, coef_smoothing, filling_calendar='yes', start_perio
 
                 df_final.to_csv('week_test_res.csv', mode='a')
 
-
 # Press the green button in the gutter to run the script.
+#
+# [7230,7236,7238,7241,7242,7245,7246,7256,7258,7259,7261,7265,7267,7268,7269,7270,7272,7273]
 if __name__ == '__main__':
 
-    date_time_obj = datetime.strptime('2024-03-19 00:00:00.000', '%Y-%m-%d %H:%M:%S.%f')
-    # date_time_obj = datetime.now()
+    date_time_obj = datetime.strptime('2024-10-17 00:00:00.000', '%Y-%m-%d %H:%M:%S.%f')
+    #date_time_obj = datetime.now()
     main_prediction(
-        chain_list=[2],
-        category_list=[24],
+        chain_list=[7033, 7061, 7084, 7189],
+        category_list=[],
         channel=38,
         time_connection=date_time_obj,
-        status_name=2)
+        status_name=2,
+        sales_criteria=6,
+        download_flag=0)
