@@ -9,8 +9,9 @@ app = FastAPI()
 class Form(BaseModel):
     chain_list: list
     category_list: list
-    period: str
+    final_date: str
     skip_months: int
+    period: int
     download_flag: int
 
 
@@ -30,15 +31,17 @@ def predict(mask: Form):
     main_prediction(chain_list=mask.chain_list,
                     category_list=mask.category_list,
                     time_connection=cur_time,
-                    period=mask.period,
+                    final_date=mask.final_date,
                     skip_months=mask.skip_months,
+                    period = mask.period,
                     download_flag=mask.download_flag
                     )
     main_prediction(chain_list=mask.chain_list,
                     category_list=mask.category_list,
                     time_connection=cur_time,
-                    period=mask.period,
+                    final_date=mask.final_date,
                     skip_months=mask.skip_months,
+                    period=mask.period,
                     status_name=2,
                     download_flag=mask.download_flag
                     )
@@ -52,8 +55,9 @@ def predict(mask: Form):
     main_prediction(chain_list=mask.chain_list,
                     category_list=mask.category_list,
                     time_connection=cur_time,
-                    period=mask.period,
+                    final_date=mask.final_date,
                     skip_months=mask.skip_months,
+                    period=mask.period,
                     download_flag=mask.download_flag
                     )
     return (f"Successful with buyers {mask.chain_list}, categories {mask.category_list} "
@@ -66,8 +70,9 @@ def predict(mask: Form):
     main_prediction(chain_list=mask.chain_list,
                     category_list=mask.category_list,
                     time_connection=cur_time,
-                    period=mask.period,
+                    final_date=mask.final_date,
                     skip_months=mask.skip_months,
+                    period=mask.period,
                     status_name=2,
                     download_flag=mask.download_flag
                     )

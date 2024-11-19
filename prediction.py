@@ -628,8 +628,9 @@ def download_DB(df):
 def main_prediction(chain_list,  # List of necessary buyers
                     category_list,  # List of necessary categories of goods
                     time_connection,  # Start time
-                    period,  # Final month for fact data
-                    skip_months, # Amount of monthes to skip
+                    final_date,  # Final month for fact data
+                    skip_months,  # Amount of monthes to skip
+                    period,  # Period of forecasting
                     status_name=0,  # Type of sales (if status_name=0, we will download all type of sales)
                     sales_criteria=6,
                     download_flag=1):
@@ -675,18 +676,18 @@ def main_prediction(chain_list,  # List of necessary buyers
             # if len(df_new_1_2) < 4:
             #     print("Not enough length of dataset - ", len(df_new_1_2))
             #     continue
-            date_object = datetime.strptime(period, "%Y-%m-%d")
+            date_object = datetime.strptime(final_date, "%Y-%m-%d")
 
             # Извлекаем год и месяц
-            year_period = date_object.year
-            month_period = date_object.month
+            final_date_year = date_object.year
+            final_date_month = date_object.month
 
             # Extrapolate our data on full year/month period with small values on months without sale
             df_new_1_2['Cal'] = df_new_1_2.apply(lambda var: str(int(var.year)) + '_' + str(int(var.month_id)), axis=1)
             cals = sample_calendar(df_new_1_2.year.min(),
                                    df_new_1_2[df_new_1_2.year == df_new_1_2.year.min()].month_id.min(),
-                                   year_period,
-                                   month_period)
+                                   final_date_year,
+                                   final_date_month)
             df_new_1_2 = df_new_1_2.merge(cals, left_on='Cal', right_on=0, how='right')
             df_new_1_2['year'] = df_new_1_2.apply(lambda var: int(var.Cal.split('_')[0]), axis=1)
             df_new_1_2['month_id'] = df_new_1_2.apply(lambda var: int(var.Cal.split('_')[1]), axis=1)
@@ -706,7 +707,6 @@ def main_prediction(chain_list,  # List of necessary buyers
             # Making Series for predictions
             X = df_new_1_2['volume']
             X = X.reset_index(drop=True)
-            print(X)
 
             # Copy our data and make corrections with outliers
             Y = df_new_1_2['volume'].copy()
@@ -717,8 +717,6 @@ def main_prediction(chain_list,  # List of necessary buyers
 
             t = skip_months  # except 1 month from dataset, cuz it can be not full else
             X_m = X[:-t]
-            print(X_m)
-            exit()
             train_size = int(len(X_m) * 0.75)
             train_X, test_X = X_m[:train_size].to_list(), X_m[train_size:].to_list()
 
@@ -776,7 +774,7 @@ def main_prediction(chain_list,  # List of necessary buyers
             print(f"Best models {chain} and {l3}: ", best_params_X)
             print(f"Best models {chain} and {l3} corr: ", best_params_Y)
 
-            period = 14
+            # period = 14
             df_final = df_new_1_2.copy()
             df_final.drop('Seas', axis=1)
 
@@ -924,6 +922,7 @@ def main_prediction(chain_list,  # List of necessary buyers
                 df_final['best_model_value'] = df_final[best_model_df_1]
 
             df_final_full = df_final_full.append(df_final)
+        print(df_final_full)
 
         df_final_full = df_final_full.astype({'l3_id': np.int64,
                                               'buyer_id': np.int64,
@@ -1265,8 +1264,9 @@ if __name__ == '__main__':
         chain_list=[7011],
         category_list=[189],
         time_connection=date_time_obj,
-        period='2024-11-01',
+        final_date='2024-11-01',
         skip_months=1,
+        period=13,
         status_name=0,
         sales_criteria=6,
         download_flag=0)
