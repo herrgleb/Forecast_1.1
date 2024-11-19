@@ -1,6 +1,5 @@
 import pandas as pd
 import numpy as np
-import matplotlib.pyplot as plt
 from pathlib import Path
 
 from sklearn.metrics import mean_absolute_error, mean_squared_error
@@ -183,7 +182,7 @@ def SimpleSmooth_Seas(train,  # Train dataset
                 df_modeling_1.to_csv("Modeling.csv", mode="a")
         except Exception as e:
             continue
-    # Check model with estimated method of initialization
+        # Check model with estimated method of initialization
         try:
             threshold = 'No'
             model = SimpleExpSmoothing(train, initialization_method="estimated").fit()
@@ -205,7 +204,8 @@ def SimpleSmooth_Seas(train,  # Train dataset
                 res_modeling = np.append(model.fittedvalues, fcast_seas)
                 df_modeling_1 = df_modeling.copy()
                 df_modeling_1 = df_modeling_1.assign(prediction=res_modeling)
-                df_modeling_1 = df_modeling_1.assign(parameters='Smoothing_' + str(model.model.params["smoothing_level"]))
+                df_modeling_1 = df_modeling_1.assign(
+                    parameters='Smoothing_' + str(model.model.params["smoothing_level"]))
                 df_modeling_1 = df_modeling_1.assign(train_error=mean_absolute_error(train, model.fittedvalues))
                 df_modeling_1 = df_modeling_1.assign(test_error=mean_absolute_error(test, fcast_seas))
                 df_modeling_1 = df_modeling_1.assign(threshold=threshold)
@@ -517,7 +517,7 @@ def define_best_model_test(best_params_X,  # The first sample of model's paramet
 
 # Going through best parameters lists to define the best model on test score v.2
 def define_best_model_test_np(best_params_X,  # The first sample of model's parameters and scores list
-                              best_params_Y):    # The second sample of model's parameters and scores list
+                              best_params_Y):  # The second sample of model's parameters and scores list
     x = []
     for elem in best_params_X:
         x.append([elem.split("_")[0], float(elem.split("_")[2])])
@@ -627,8 +627,9 @@ def download_DB(df):
 # Main prediction loop
 def main_prediction(chain_list,  # List of necessary buyers
                     category_list,  # List of necessary categories of goods
-                    channel,  # List of sale channels (not use for now)
                     time_connection,  # Start time
+                    period,  # Final month for fact data
+                    skip_months, # Amount of monthes to skip
                     status_name=0,  # Type of sales (if status_name=0, we will download all type of sales)
                     sales_criteria=6,
                     download_flag=1):
@@ -647,6 +648,7 @@ def main_prediction(chain_list,  # List of necessary buyers
     df_new_1 = df_new_1[['year', 'year_id', 'month_id', 'volume', 'cpg_id', 'ppg_id', 'cpg_name', 'ppg_name']]
     df_new_1 = df_new_1.rename(columns={'ppg_id': 'l3_id'})
     chain_name = df_new_1.cpg_id.value_counts().index.to_list()
+    print(chain_name)
 
     for chain in chain_name:
         # Build-up empty DataFrame for our predictions
@@ -673,13 +675,18 @@ def main_prediction(chain_list,  # List of necessary buyers
             # if len(df_new_1_2) < 4:
             #     print("Not enough length of dataset - ", len(df_new_1_2))
             #     continue
+            date_object = datetime.strptime(period, "%Y-%m-%d")
+
+            # Извлекаем год и месяц
+            year_period = date_object.year
+            month_period = date_object.month
 
             # Extrapolate our data on full year/month period with small values on months without sale
             df_new_1_2['Cal'] = df_new_1_2.apply(lambda var: str(int(var.year)) + '_' + str(int(var.month_id)), axis=1)
             cals = sample_calendar(df_new_1_2.year.min(),
                                    df_new_1_2[df_new_1_2.year == df_new_1_2.year.min()].month_id.min(),
-                                   2024,
-                                   10)
+                                   year_period,
+                                   month_period)
             df_new_1_2 = df_new_1_2.merge(cals, left_on='Cal', right_on=0, how='right')
             df_new_1_2['year'] = df_new_1_2.apply(lambda var: int(var.Cal.split('_')[0]), axis=1)
             df_new_1_2['month_id'] = df_new_1_2.apply(lambda var: int(var.Cal.split('_')[1]), axis=1)
@@ -696,10 +703,10 @@ def main_prediction(chain_list,  # List of necessary buyers
 
             df_new_1_2.loc[(df_new_1_2['volume'] <= 0), 'volume'] = 0.000001
 
-
             # Making Series for predictions
             X = df_new_1_2['volume']
             X = X.reset_index(drop=True)
+            print(X)
 
             # Copy our data and make corrections with outliers
             Y = df_new_1_2['volume'].copy()
@@ -708,8 +715,10 @@ def main_prediction(chain_list,  # List of necessary buyers
             Y[(Y.values < quan_res[0])] = quan_res[0]
             Y[(Y.values > quan_res[1])] = quan_res[1]
 
-            t = 1  # except 1 month from dataset, cuz it can be not full else
+            t = skip_months  # except 1 month from dataset, cuz it can be not full else
             X_m = X[:-t]
+            print(X_m)
+            exit()
             train_size = int(len(X_m) * 0.75)
             train_X, test_X = X_m[:train_size].to_list(), X_m[train_size:].to_list()
 
@@ -971,10 +980,9 @@ def main_prediction(chain_list,  # List of necessary buyers
         if len(df_final_full_reorder) > 0 and download_flag == 1:
             # continue
             download_DB(df_final_full_reorder)
+            print(f'Download {chain} was successful')
+            print('Time of download full category prediction', datetime.now() - time_connection)
 
-        print(f'Download {chain} was successful')
-
-        print('Time of download full category prediction', datetime.now() - time_connection)
         # Turning on SQL procedure
         # sql_split_forecast = "EXEC split_forecast_g @DateToLoad=?"
         # params = (time_connection)
@@ -1216,7 +1224,7 @@ def main_prediction_week(df, coef_smoothing, filling_calendar='yes', start_perio
                               'Holt-Winters_corr': 'predict_holt_wint_corr',
                               'Unknown': 'Unknown'
                               }
-                best_model_df = model_dict[define_best_model_test(best_params_X, best_params_Y)]
+                best_model_df = model_dict[define_best_model_test_np(best_params_X, best_params_Y)]
                 print("Best model test", best_model_df)
                 df_final_st = df_final[:len_st]
                 score = 0.
@@ -1246,18 +1254,19 @@ def main_prediction_week(df, coef_smoothing, filling_calendar='yes', start_perio
 
                 df_final.to_csv('week_test_res.csv', mode='a')
 
+
 # Press the green button in the gutter to run the script.
 #
 # [7230,7236,7238,7241,7242,7245,7246,7256,7258,7259,7261,7265,7267,7268,7269,7270,7272,7273]
 if __name__ == '__main__':
-
     date_time_obj = datetime.strptime('2024-10-17 00:00:00.000', '%Y-%m-%d %H:%M:%S.%f')
     date_time_obj = datetime.now()
     main_prediction(
         chain_list=[7011],
         category_list=[189],
-        channel=38,
         time_connection=date_time_obj,
+        period='2024-11-01',
+        skip_months=1,
         status_name=0,
         sales_criteria=6,
         download_flag=0)

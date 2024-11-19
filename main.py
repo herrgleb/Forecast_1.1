@@ -9,7 +9,9 @@ app = FastAPI()
 class Form(BaseModel):
     chain_list: list
     category_list: list
-    channel: int
+    period: str
+    skip_months: int
+    download_flag: int
 
 
 @app.get('/status')  # get status of service
@@ -27,16 +29,21 @@ def predict(mask: Form):
     cur_time = datetime.now()
     main_prediction(chain_list=mask.chain_list,
                     category_list=mask.category_list,
-                    channel=mask.channel,
-                    time_connection=cur_time
+                    time_connection=cur_time,
+                    period=mask.period,
+                    skip_months=mask.skip_months,
+                    download_flag=mask.download_flag
                     )
     main_prediction(chain_list=mask.chain_list,
                     category_list=mask.category_list,
-                    channel=mask.channel,
                     time_connection=cur_time,
-                    status_name=2
+                    period=mask.period,
+                    skip_months=mask.skip_months,
+                    status_name=2,
+                    download_flag=mask.download_flag
                     )
-    return f"Successful with buyers {mask.chain_list}, categories {mask.category_list} and channels {mask.channel}"
+    return (f"Successful with buyers {mask.chain_list}, categories {mask.category_list} "
+            f"and download is {mask.download_flag}")
 
 
 @app.post('/predict_total')  # start full algo for total data
@@ -44,10 +51,13 @@ def predict(mask: Form):
     cur_time = datetime.now()
     main_prediction(chain_list=mask.chain_list,
                     category_list=mask.category_list,
-                    channel=mask.channel,
-                    time_connection=cur_time
+                    time_connection=cur_time,
+                    period=mask.period,
+                    skip_months=mask.skip_months,
+                    download_flag=mask.download_flag
                     )
-    return f"Successful with buyers {mask.chain_list}, categories {mask.category_list} and channels {mask.channel}"
+    return (f"Successful with buyers {mask.chain_list}, categories {mask.category_list} "
+            f"and download is {mask.download_flag}")
 
 
 @app.post('/predict_regular')  # start full algo for data only with status_name = Regular
@@ -55,20 +65,12 @@ def predict(mask: Form):
     cur_time = datetime.now()
     main_prediction(chain_list=mask.chain_list,
                     category_list=mask.category_list,
-                    channel=mask.channel,
                     time_connection=cur_time,
-                    status_name=2
+                    period=mask.period,
+                    skip_months=mask.skip_months,
+                    status_name=2,
+                    download_flag=mask.download_flag
                     )
-    return f"Successful with buyers {mask.chain_list}, categories {mask.category_list} and channels {mask.channel}"
+    return (f"Successful with buyers {mask.chain_list}, categories {mask.category_list} "
+            f"and download is {mask.download_flag}")
 
-# {
-#     "buyer_list": [4019, 3356],
-#     "category_list": [18, 19],
-#     "channel": 18
-# }
-
-# {
-#     "buyer_list": [2917],
-#     "category_list": [1],
-#     "channel": 18
-# }
