@@ -143,9 +143,9 @@ def SimpleSmooth_Seas(train,  # Train dataset
             # Check std for prediction on Train and Test. If std is near with train/test target std, we will add metrics
             # to dictionary with model_name and score for train and test
             if (statistics.pstdev(fcast_seas) / statistics.mean(fcast_seas) >=
-                statistics.pstdev(test) / statistics.mean(test) * (1 - 1)) and \
+                statistics.pstdev(test) / statistics.mean(test) * (1 - 0.5)) and \
                     (statistics.pstdev(model.fittedvalues) / statistics.mean(model.fittedvalues) >=
-                     statistics.pstdev(train) / statistics.mean(train) * (1 - 1)):
+                     statistics.pstdev(train) / statistics.mean(train) * (1 - 0.5)):
                 threshold = 'Added'
                 error_dict_X_S['Smoothing_' + str(alpha / 100)] = [
                     mean_absolute_error(train, model.fittedvalues),
