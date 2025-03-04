@@ -172,9 +172,9 @@ def SimpleSmooth_Seas(train,  # Train dataset
                 fcast_seas.append(x * y)
             # Check std
             if (statistics.pstdev(fcast_seas) / statistics.mean(fcast_seas) >=
-                statistics.pstdev(test) / statistics.mean(test) * (1 - 1)) and \
+                statistics.pstdev(test) / statistics.mean(test) * (1 - 0.5)) and \
                     (statistics.pstdev(model.fittedvalues) / statistics.mean(model.fittedvalues) >=
-                     statistics.pstdev(train) / statistics.mean(train) * (1 - 1)):
+                     statistics.pstdev(train) / statistics.mean(train) * (1 - 0.5)):
                 threshold = 'Added'
                 error_dict_X_S['Smoothing_' + str(model.model.params["smoothing_level"])] = [
                     mean_absolute_error(train, model.fittedvalues),
