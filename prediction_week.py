@@ -1174,7 +1174,7 @@ def main_prediction_v2(date_type, cpg_list, ppg_list, status_id, time_connection
                         total_table.index.name = 'index'
                         print(total_table)
                         filename = time_connection.strftime("%d%m%y")
-                        file_tag = 'Lactalis'
+                        file_tag = 'result'
                         filename += "___" + str(file_tag) + ".csv"
                         filename = "data/" + filename
                         print(filename)

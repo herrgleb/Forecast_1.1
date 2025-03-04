@@ -51,7 +51,7 @@ def seasonal(df: pd.DataFrame,  # DataFrame with (year, volume and month_id) col
     full_year = []
     seas_dict_month = {1: 0, 2: 0, 3: 0, 4: 0, 5: 0, 6: 0, 7: 0, 8: 0, 9: 0, 10: 0, 11: 0, 12: 0}  #
     for y in df.year.unique():  # research dataset for finding all full year samples (years with volume for n months
-        if (len(df[df.year == y]) == n) & (y < 2024) & (df[df.year == y].volume.sum() > 0):
+        if (len(df[df.year == y]) == n): # & (y < 2024) & (df[df.year == y].volume.sum() > 0):
             full_year.append(y)
     for f_y in full_year:  # calculation seasonal coefficients
         for m in range(1, 13):
@@ -522,7 +522,7 @@ def connection_DB(time_connection,  # Start time
     with open(CONNECTION_FILENAME) as f:
         lines = f.readlines()
     connect_str = ""
-    database_name = lines[2].split("=")[1][:-2]
+    # database_name = lines[2].split("=")[1][:-2]
     for x in lines:
         connect_str += x.replace('/n', '')
     connect_str = " ".join(connect_str.split())
@@ -689,8 +689,6 @@ def main_prediction(chain_list,  # List of necessary buyers
             df_new_1_2_1['month_id'] = df_new_1_2_1.apply(lambda var: int(var.Cal.split('_')[1]), axis=1)
             df_new_1_2_1['volume'] = df_new_1_2_1['volume'].fillna(0)
             df_new_1_2_1 = df_new_1_2_1.drop(['Cal', 0], axis=1)
-            print(df_new_1_2_1)
-            exit()
             seas_list = seasonal(df_new_1_2_1, 12)
             print(seas_list)
             cals = sample_calendar(df_new_1_2.year.min(),
@@ -978,7 +976,7 @@ def main_prediction(chain_list,  # List of necessary buyers
 
         # Write result to the file
         filename = time_connection.strftime("%d%m%y")
-        file_tag = 'Atyashevo'
+        file_tag = 'result'
         filename += "___" + str(file_tag) + ".csv"
         filename = "data/" + filename
         print(filename)
@@ -1006,7 +1004,7 @@ if __name__ == '__main__':
     #connection_DB(date_time_obj, [1425], [], 1)
     main_prediction(
         chain_list=[1425],
-        category_list=[],
+        category_list=[121],
         time_connection=date_time_obj,
         final_date='2024-12-01',
         skip_months=1,
