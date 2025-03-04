@@ -1,5 +1,6 @@
 from fastapi import FastAPI
 from prediction import current_version, main_prediction
+from prediction_week import main_prediction_v2
 from pydantic import BaseModel
 from datetime import datetime
 
@@ -13,6 +14,19 @@ class Form(BaseModel):
     skip_months: int
     period: int
     download_flag: int
+
+class MODELTWO(BaseModel):
+    date_type: str
+    cpg_list: list
+    ppg_list: list
+    status_id: int
+    time_connection: str
+    final_fact_date: str
+    rolling_dict: dict
+    number_of_zeros: dict
+    horizon_frcst: dict
+    simplest_model_range: dict
+    growing_range: dict
 
 
 @app.get('/status')  # get status of service
@@ -78,4 +92,23 @@ def predict(mask: Form):
                     )
     return (f"Successful with buyers {mask.chain_list}, categories {mask.category_list} "
             f"and download is {mask.download_flag}")
+
+
+@app.post('/predict2_total')
+def predict(mask: MODELTWO):
+    cur_time = datetime.now()
+    main_prediction_v2(date_type=mask.date_type,
+                       cpg_list=mask.cpg_list,
+                       ppg_list=mask.ppg_list,
+                       status_id=mask.status_id,
+                       time_connection=cur_time,
+                       final_fact_date=mask.final_fact_date,
+                       rolling_dict=mask.rolling_dict,
+                       number_of_zeros=mask.number_of_zeros,
+                       horizon_frcst=mask.horizon_frcst,
+                       simplest_model_range=mask.simplest_model_range,
+                       growing_range=mask.growing_range
+                       )
+    return (f"Successful with buyers {mask.cpg_list}, categories {mask.ppg_list}")
+
 
