@@ -62,7 +62,7 @@ def metadata_DB(chain_list,  # List of necessary buyers
     category_str = category_str[:-1] + ')'
 
     # Extracting data from SQL database
-    if status_name == 0:
+    if status_name == 3:
         # data = pd.read_sql(f"SELECT * FROM [dbo].[SalesInWeek] "
         #                    f"WHERE cpg_id in {chain_str} and ppg_id in {category_str};",
         #                    connection)
@@ -1099,7 +1099,8 @@ def main_prediction_v2(date_type, cpg_list, ppg_list, status_id, time_connection
             if len(dd) > 0:
                 # data_visualisation(dd, type_date=date_type, type_graph=['promo_regular'])
                 mdls_list = ['prophet', 'arima', 'smoothing', 'holt', 'holt_winters']
-                for st in status_id:
+                status_list = [status_id]
+                for st in status_list:
                     print("Status ", st)
                     if (((len(dd[dd.status_id == st]) > 0) and (
                             dd[dd.status_id == st].index.min() < final_fact_date)) or
@@ -1195,11 +1196,11 @@ def main_prediction_v2(date_type, cpg_list, ppg_list, status_id, time_connection
 
 if __name__ == '__main__':
     main_prediction_v2(date_type='week',
-                       cpg_list=[1425],
-                       ppg_list=[322],
-                       status_id=[2, 3],
+                       cpg_list=[1],
+                       ppg_list=[2],
+                       status_id=3,
                        time_connection='2025-03-04',
-                       final_fact_date='2024-11-30',
+                       final_fact_date='2025-02-16',
                        rolling_dict={'week': 4, 'month': 2},
                        number_of_zeros={'week': 24, 'month': 6},
                        horizon_frcst={'week': 52, 'month': 6},
