@@ -24,7 +24,7 @@ def metadata_DB(chain_list,  # List of necessary buyers
                 status_name):  # Type of sales (if status_name=0, we will download all type of sales)
     CONNECTION_PATH = Path()
     # Connection parameters are inside txt file
-    FILENAME = "Connection_PG.txt"
+    FILENAME = "connection_Lactalis.txt"
     CONNECTION_FILENAME = CONNECTION_PATH / FILENAME
     with open(CONNECTION_FILENAME) as f:
         lines = f.readlines()
@@ -1098,8 +1098,7 @@ def main_prediction_v2(date_type, cpg_list, ppg_list, status_id, time_connection
             if len(dd) > 0:
                 # data_visualisation(dd, type_date=date_type, type_graph=['promo_regular'])
                 mdls_list = ['prophet', 'arima', 'smoothing', 'holt', 'holt_winters']
-                st_list = [status_id]
-                for st in st_list:
+                for st in status_id:
                     print("Status ", st)
                     if (((len(dd[dd.status_id == st]) > 0) and (
                             dd[dd.status_id == st].index.min() < final_fact_date)) or
@@ -1165,10 +1164,11 @@ def main_prediction_v2(date_type, cpg_list, ppg_list, status_id, time_connection
                         total_table['best_model_name'] = '' if skip else best_model_name
                         total_table['best_model_value'] = 0 if skip else total_table[best_model_name]
 
-                        total_table['status_id'] = 'Regular' if st == 2 else 'Promo' if st == 1 else 'Total'
+                        total_table['status_id'] = st # 'Regular' if st == 2 else 'Promo' if st == 1 else 'Total'
                         total_table['cpg'] = cpg_d
                         total_table['ppg'] = ppg_d
                         total_table['correction'] = 'Yes'  # if flag == 1 else 'No'
+                        total_table['date_upload'] = time_connection
                         total_table = pd.merge(total_table, raw_fact, left_index=True, right_index=True, how='left')
                         total_table['volume'] = total_table['volume'].fillna(0)
                         total_table.index.name = 'index'
@@ -1178,7 +1178,7 @@ def main_prediction_v2(date_type, cpg_list, ppg_list, status_id, time_connection
                         filename += "___" + str(file_tag) + ".csv"
                         filename = "data/" + filename
                         print(filename)
-                        total_table.reset_index().to_csv(filename, decimal=',', index=False, mode='a')
+                        # total_table.reset_index().to_csv(filename, decimal=',', index=False, mode='a')
                         # total_table_test = total_table.tail(horizon_frcst[date_type])
                         # metric_df = pd.DataFrame()
                         # metric_df.at[0, 'cpg'] = cpg_d
@@ -1196,12 +1196,12 @@ if __name__ == '__main__':
     main_prediction_v2(date_type='week',
                        cpg_list=[1425],
                        ppg_list=[322],
-                       status_id=1,
+                       status_id=[2, 3],
                        time_connection='2025-03-04',
                        final_fact_date='2024-11-30',
                        rolling_dict={'week': 4, 'month': 2},
                        number_of_zeros={'week': 24, 'month': 6},
-                       horizon_frcst={'week': 4, 'month': 6},
+                       horizon_frcst={'week': 52, 'month': 6},
                        simplest_model_range={'week': 26, 'month': 6},
                        growing_range={'week': 26, 'month': 6})
 

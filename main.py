@@ -15,11 +15,12 @@ class Form(BaseModel):
     period: int
     download_flag: int
 
+
 class MODELTWO(BaseModel):
     date_type: str
     cpg_list: list
     ppg_list: list
-    status_id: int
+    status_id: list
     time_connection: str
     final_fact_date: str
     rolling_dict: dict
