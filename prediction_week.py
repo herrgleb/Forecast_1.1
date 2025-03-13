@@ -25,6 +25,7 @@ def metadata_DB(chain_list,  # List of necessary buyers
     CONNECTION_PATH = Path()
     # Connection parameters are inside txt file
     FILENAME = "connection_Lactalis.txt"
+
     CONNECTION_FILENAME = CONNECTION_PATH / FILENAME
     with open(CONNECTION_FILENAME) as f:
         lines = f.readlines()
