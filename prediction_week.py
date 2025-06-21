@@ -60,7 +60,7 @@ def metadata_DB(chain_list,  # List of necessary buyers
     for x in category_list:
         category_str += str(x) + ','
     category_str = category_str[:-1] + ')'
-
+    data = pd.DataFrame()
     # Extracting data from SQL database
     if status_name == 3:
         # data = pd.read_sql(f"SELECT * FROM [dbo].[SalesInWeek] "
@@ -625,84 +625,87 @@ def seasonality_calculation(data, tag, type_date):
         df = data.df.copy()
         df['week'] = df.index.isocalendar().week
         df['year'] = df.index.year
-        df = df[df.year == 2023]
+        df = df[df['year'].isin([2023, 2024])]
         if df[(tag, 'target')].mean() == 0:
             df = pd.DataFrame()
         else:
-            mean_week = df[(tag, 'target')].mean()
-            df['mean_week'] = mean_week
-            df['seasonal_coefficient'] = df[(tag, 'target')] / mean_week
-        df = df[['week', 'seasonal_coefficient']]
+            mean_week = df.groupby(('year', '')).mean().reset_index()
+            df = pd.merge(df, mean_week, how='left', on='year', suffixes=('', '_mean'))
+            df['seasonal_coefficient'] = df[(tag, 'target')] / df[(tag+'_mean', 'target')]
+        df = df[['week', 'seasonal_coefficient']].groupby(('week', '')).mean().reset_index()
         df.columns = [''.join(col) for col in df.columns]
     if type_date == 'month':
         df = data.df.copy()
         df['month'] = df.index.month
         df['year'] = df.index.year
-        df = df[df.year == 2023]
+        df = df[df['year'].isin([2023, 2024])]
         if df[(tag, 'target')].mean() == 0:
             df = pd.DataFrame()
         else:
-            mean_month = df[(tag, 'target')].mean()
-            df['mean_month'] = mean_month
-            df['seasonal_coefficient'] = df[(tag, 'target')] / mean_month
-        df = df[['month', 'seasonal_coefficient']]
+            mean_month = df.groupby(('year', '')).mean().reset_index()
+            df = pd.merge(df, mean_month, how='left', on='year', suffixes=('', '_mean'))
+            df['seasonal_coefficient'] = df[(tag, 'target')] / df[(tag+'_mean', 'target')]
+        df = df[['month', 'seasonal_coefficient']].groupby(('month', '')).mean().reset_index()
         df.columns = [''.join(col) for col in df.columns]
     return df
 
 
 def prophet_modeling(train, test, type_date, changepoint, seasonality, horizon, score):
     print("Start Prophet")
-    for ch_p in np.arange(0.1, changepoint, 0.5):
-        for s_p in np.arange(10., seasonality, 5):
-            try:
-                train1 = TSDataset(df=train.df.copy(), freq=train.freq)
-                if type_date == 'week':
-                    prophet_model = ProphetModel(daily_seasonality=False,
-                                                 weekly_seasonality=True,
-                                                 yearly_seasonality=False,
-                                                 changepoint_prior_scale=ch_p,
-                                                 seasonality_prior_scale=s_p,
-                                                 uncertainty_samples=100,
-                                                 # growth='logistic',
-                                                 additional_seasonality_params=[
-                                                     {'name': 'month', 'period': 12, 'fourier_order': 12}]
-                                                 )
-                if type_date == 'month':
-                    prophet_model = ProphetModel(daily_seasonality=False,
-                                                 weekly_seasonality=False,
-                                                 yearly_seasonality=True,
-                                                 changepoint_prior_scale=ch_p,
-                                                 seasonality_prior_scale=s_p,
-                                                 uncertainty_samples=100,
-                                                 # growth='logistic',
-                                                 additional_seasonality_params=[
-                                                     {'name': 'month', 'period': 12, 'fourier_order': 6}]
-                                                 )
-                prophet_model.fit(train1)
-                future_ts = train1.make_future(horizon)
-                forecast_ts = prophet_model.forecast(future_ts)
-                forecast_df = forecast_ts.to_pandas(False)
-                # forecast_df.loc[forecast_df[('raw', 'target')] < 0, ('raw', 'target')] = 0
-                # forecast_df.loc[forecast_df[('rolling', 'target')] < 0, ('rolling', 'target')] = 0
-                score_raw = mean_squared_error(forecast_df[('raw', 'target')], test.loc[:, ('raw', 'target')]) ** 0.5
-                score_rolling = mean_squared_error(forecast_df[('rolling', 'target')],
-                                                   test.loc[:, ('raw', 'target')]) ** 0.5
-                # print(ch_p, s_p)
-                # print('rmse_raw', score_raw)
-                # print('rmse_rolling', score_rolling)
-                score = score.append({'model': 'prophet',
-                                      'data': 'raw',
-                                      'par': str(ch_p) + "_" + str(s_p) + '_raw',
-                                      'score': score_raw},
-                                     ignore_index=True)
-                score = score.append({'model': 'prophet',
-                                      'data': 'rolling',
-                                      'par': str(ch_p) + "_" + str(s_p) + '_rolling',
-                                      'score': score_rolling},
-                                     ignore_index=True)
-            except Exception as e:
-                print(e)
-                continue
+    if horizon < 12:
+        return score
+    else:
+        for ch_p in np.arange(0.1, changepoint, 0.5):
+            for s_p in np.arange(10., seasonality, 5):
+                try:
+                    train1 = TSDataset(df=train.df.copy(), freq=train.freq)
+                    if type_date == 'week':
+                        prophet_model = ProphetModel(daily_seasonality=False,
+                                                     weekly_seasonality=True,
+                                                     yearly_seasonality=False,
+                                                     changepoint_prior_scale=ch_p,
+                                                     seasonality_prior_scale=s_p,
+                                                     uncertainty_samples=100,
+                                                     # growth='logistic',
+                                                     additional_seasonality_params=[
+                                                         {'name': 'month', 'period': 12, 'fourier_order': 12}]
+                                                     )
+                    if type_date == 'month':
+                        prophet_model = ProphetModel(daily_seasonality=False,
+                                                     weekly_seasonality=False,
+                                                     yearly_seasonality=True,
+                                                     changepoint_prior_scale=ch_p,
+                                                     seasonality_prior_scale=s_p,
+                                                     uncertainty_samples=100,
+                                                     # growth='logistic',
+                                                     additional_seasonality_params=[
+                                                         {'name': 'month', 'period': 12, 'fourier_order': 6}]
+                                                     )
+                    prophet_model.fit(train1)
+                    future_ts = train1.make_future(horizon)
+                    forecast_ts = prophet_model.forecast(future_ts)
+                    forecast_df = forecast_ts.to_pandas(False)
+                    # forecast_df.loc[forecast_df[('raw', 'target')] < 0, ('raw', 'target')] = 0
+                    # forecast_df.loc[forecast_df[('rolling', 'target')] < 0, ('rolling', 'target')] = 0
+                    score_raw = mean_squared_error(forecast_df[('raw', 'target')], test.loc[:, ('raw', 'target')]) ** 0.5
+                    score_rolling = mean_squared_error(forecast_df[('rolling', 'target')],
+                                                       test.loc[:, ('raw', 'target')]) ** 0.5
+                    # print(ch_p, s_p)
+                    # print('rmse_raw', score_raw)
+                    # print('rmse_rolling', score_rolling)
+                    score = score.append({'model': 'prophet',
+                                          'data': 'raw',
+                                          'par': str(ch_p) + "_" + str(s_p) + '_raw',
+                                          'score': score_raw},
+                                         ignore_index=True)
+                    score = score.append({'model': 'prophet',
+                                          'data': 'rolling',
+                                          'par': str(ch_p) + "_" + str(s_p) + '_rolling',
+                                          'score': score_rolling},
+                                         ignore_index=True)
+                except Exception as e:
+                    print(e)
+                    continue
     return score
 
 
@@ -733,10 +736,11 @@ def arima_modeling(train, test, tag, p_max, q_max, d_max, horizon, score):
 
 def holt_winters_modeling(train, test, type_date, tag, step1, step2, step3, horizon, score):
     print('Start Holt-Winters')
+    #print(tag, train.df[(tag, 'target')].sum())
     for alpha in range(0, 100, int(step1 * 100)):
         for beta in range(0, 100, int(step2 * 100)):
             for gamma in range(0, 100, int(step3 * 100)):
-                for tr in ['add', 'mul', None]:
+                for tr in ['add']:
                     for damp in [True, False]:
                         for ss in ['add', 'mul']:
                             try:
@@ -774,13 +778,14 @@ def holt_winters_modeling(train, test, type_date, tag, step1, step2, step3, hori
                                                           'score': score_value},
                                                          ignore_index=True)
 
-                            except Exception:
+                            except Exception as e:
                                 continue
     return score
 
 
 def smoothing_modeling(train, test, type_date, seas, tag, step, horizon, score):
     print('Start Simple Smoothing')
+    #print(tag, train.df[(tag, 'target')].sum())
     for alpha in range(0, 100, int(step * 100)):
         try:
             model = SimpleExpSmoothing(train.df[(tag, 'target')], initialization_method="heuristic").fit(
@@ -819,6 +824,7 @@ def smoothing_modeling(train, test, type_date, seas, tag, step, horizon, score):
 
 def holt_modeling(train, test, type_date, seas, tag, step1, step2, horizon, score):
     print('Start Holt')
+    #print(tag, train.df[(tag, 'target')].sum())
     for alpha in range(0, 100, int(step1 * 100)):
         for beta in range(0, 100, int(step2 * 100)):
             for exp in [True, False]:
@@ -909,12 +915,15 @@ def best_models(data, score, seas, type_date, models_list, horizon):
                                                                )
                         prophet_model_final.fit(data1)
                         fcst = prophet_model_final.predict(data1)
+                        fitted_df = fcst.to_pandas(False)
+                        fitted_df = pd.DataFrame(fitted_df[(type_data, 'target')])
                         score_t = mean_squared_error(fcst.loc[:, (type_data, 'target')],
                                                      data1.loc[:, (type_data, 'target')]) ** 0.5
                         future_ts = data1.make_future(horizon)
                         forecast_ts = prophet_model_final.forecast(future_ts)
                         forecast_df = forecast_ts.to_pandas(False)
                         forecast_df = pd.DataFrame(forecast_df[(type_data, 'target')])
+                        forecast_df = pd.concat([fitted_df, forecast_df])
                         forecast_df.columns = [mdl + '_' + tag]
                         forecast_df.loc[forecast_df[mdl + '_' + tag] < 0, mdl + '_' + tag] = 0
                         forecast_df.loc[forecast_df[mdl + '_' + tag] > max_value, mdl + '_' + tag] = max_value
@@ -926,11 +935,13 @@ def best_models(data, score, seas, type_date, models_list, horizon):
                     try:
                         p, q, d, tag = best_params.split('_')
                         arima_model = ARIMA(data.df[(tag, 'target')], order=(int(p), int(q), int(d))).fit()
-                        fcst = arima_model.fittedvalues
-                        score_t = mean_squared_error(fcst,
+                        fitted_values = arima_model.fittedvalues
+                        score_t = mean_squared_error(fitted_values,
                                                      data.loc[:, (tag, 'target')]) ** 0.5
                         fcast = arima_model.forecast(horizon)
-                        forecast_df = pd.DataFrame(fcast)
+                        full_prediction = pd.concat([fitted_values, fcast])
+                        forecast_df = pd.DataFrame(full_prediction, columns=['forecast'])
+                        #forecast_df = pd.DataFrame(fcast)
                         forecast_df.columns = [mdl + '_' + tag]
                         forecast_df.loc[forecast_df[mdl + '_' + tag] < 0, mdl + '_' + tag] = 0
                         final_df = pd.merge(final_df, forecast_df, left_index=True, right_index=True, how='outer')
@@ -944,8 +955,10 @@ def best_models(data, score, seas, type_date, models_list, horizon):
                         smoothing_model = SimpleExpSmoothing(data.df[(tag, 'target')],
                                                              initialization_method="heuristic").fit(
                             smoothing_level=int(alpha) / 100, optimized=False)
+                        fitted_values = smoothing_model.fittedvalues
                         fcast = smoothing_model.forecast(horizon)
-                        fcast_df = pd.DataFrame(fcast, columns=['forecast'])
+                        full_prediction = pd.concat([fitted_values, fcast])
+                        fcast_df = pd.DataFrame(full_prediction, columns=['forecast'])
                         if type_date == 'week':
                             fcast_df['week'] = fcast_df.index.isocalendar().week
                             fcast_df['original_index'] = fcast_df.index
@@ -976,8 +989,10 @@ def best_models(data, score, seas, type_date, models_list, horizon):
                                           damped_trend=damp,
                                           initialization_method="estimated").fit(smoothing_level=float(alpha) / 100,
                                                                                  smoothing_trend=float(beta) / 100)
+                        fitted_values = holt_model.fittedvalues
                         fcast = holt_model.forecast(horizon)
-                        fcast_df = pd.DataFrame(fcast, columns=['forecast'])
+                        full_prediction = pd.concat([fitted_values, fcast])
+                        fcast_df = pd.DataFrame(full_prediction, columns=['forecast'])
                         if type_date == 'week':
                             fcast_df['week'] = fcast_df.index.isocalendar().week
                             fcast_df['original_index'] = fcast_df.index
@@ -1024,8 +1039,11 @@ def best_models(data, score, seas, type_date, models_list, horizon):
                                                             ).fit(smoothing_level=float(alpha) / 100,
                                                                   smoothing_trend=float(beta) / 100,
                                                                   smoothing_seasonal=float(gamma) / 100)
+                        fitted_values = hw_model.fittedvalues
                         fcast = hw_model.forecast(horizon)
-                        forecast_df = pd.DataFrame(fcast)
+                        full_prediction = pd.concat([fitted_values, fcast])
+                        forecast_df = pd.DataFrame(full_prediction, columns=['forecast'])
+                        #forecast_df = pd.DataFrame(fcast)
                         forecast_df.columns = [mdl + '_' + tag]
                         forecast_df.loc[forecast_df[mdl + '_' + tag] < 0, mdl + '_' + tag] = 0
                         forecast_df.loc[forecast_df[mdl + '_' + tag] > max_value, mdl + '_' + tag] = max_value
@@ -1080,22 +1098,25 @@ def main_prediction_v2(date_type, cpg_list, ppg_list, status_id, time_connection
                        final_fact_date, rolling_dict, number_of_zeros, horizon_frcst,
                        simplest_model_range, growing_range):
     raw_dataset, year_list, day_of_week_df = metadata_DB(cpg_list, ppg_list, status_name=status_id)
+    #raw_dataset = pd.DataFrame()
     final_fact_date = pd.to_datetime(final_fact_date)
     time_connection = datetime.strptime(time_connection, '%Y-%m-%d')
     if len(cpg_list) == 0:
-        cpg_wlist = raw_dataset.cpg_id.unique()
+        cpg_wlist = [[]]
     else:
         cpg_wlist = cpg_list
+    # cpg_wlist = cpg_list #### Удалить!
     for cpg_d in cpg_wlist:
+        print(f"Start for cpg {cpg_d}")
+        #raw_dataset, year_list, day_of_week_df = metadata_DB([cpg_d], ppg_list, status_name=status_id)
         if len(ppg_list) == 0:
             ppg_wlist = raw_dataset[raw_dataset.cpg_id == cpg_d].ppg_id.unique()
         else:
             ppg_wlist = ppg_list
-        # print(ppg_wlist)
+        print(ppg_wlist)
         for ppg_d in ppg_wlist:
             print(f'Start for {cpg_d} and {ppg_d}')
             dd = data_preparation(raw_dataset, cpg_d, ppg_d, group_type=date_type)
-            # print(dd)
             if len(dd) > 0:
                 # data_visualisation(dd, type_date=date_type, type_graph=['promo_regular'])
                 mdls_list = ['prophet', 'arima', 'smoothing', 'holt', 'holt_winters']
@@ -1112,7 +1133,7 @@ def main_prediction_v2(date_type, cpg_list, ppg_list, status_id, time_connection
                                                          final_date=final_fact_date,
                                                          rolling_month=rolling_dict['month'],
                                                          rolling_week=rolling_dict['week'])
-                        # print(ts)
+                        print(ts)
                         skip = skip_option(ts, column_name=('raw', 'target'), zeros=number_of_zeros[date_type])
                         seas_df = seasonality_calculation(ts, tag='rolling', type_date=date_type)
                         score_df = pd.DataFrame(columns=['model', 'data', 'par', 'score'])
@@ -1123,6 +1144,8 @@ def main_prediction_v2(date_type, cpg_list, ppg_list, status_id, time_connection
                                                                       horizon=horizon_frcst[date_type])
                         else:
                             HORIZON = min(max(int(len(ts.df) * 0.25), 1), int(len(ts.df)) - 1)
+                            # HORIZON = 10
+                            print(len(ts.df))
                             print(HORIZON)
                             train_ts, test_ts = ts.train_test_split(test_size=HORIZON)
                             score_df = holt_winters_modeling(train=train_ts, test=test_ts, type_date=date_type,
@@ -1145,9 +1168,9 @@ def main_prediction_v2(date_type, cpg_list, ppg_list, status_id, time_connection
                                                           seas=seas_df,
                                                           tag='rolling', step=0.05, horizon=HORIZON,
                                                           score=score_df)
-                            score_df = arima_modeling(train_ts, test_ts, 'raw', 9, 2, 2,
+                            score_df = arima_modeling(train_ts, test_ts, 'raw', 8, 2, 2,
                                                       horizon=HORIZON, score=score_df)
-                            score_df = arima_modeling(train_ts, test_ts, 'rolling', 9, 2, 2,
+                            score_df = arima_modeling(train_ts, test_ts, 'rolling', 8, 2, 2,
                                                       horizon=HORIZON, score=score_df)
                             score_df = prophet_modeling(train=train_ts, test=test_ts, type_date=date_type,
                                                         changepoint=1.2, seasonality=16., horizon=HORIZON,
@@ -1161,7 +1184,7 @@ def main_prediction_v2(date_type, cpg_list, ppg_list, status_id, time_connection
                         best_params_df['holt_flag'] = best_params_df['model'].apply(
                             lambda x: 1 if x in ['holt_raw', 'holt_rolling'] else 0)
                         best_params_df = best_params_df.sort_values(by=['holt_flag', 'score']).drop('holt_flag', axis=1)
-                        best_model_name = best_model_growth_update(total_table, best_params_df, 0.8, 0.4,
+                        best_model_name = best_model_growth_update(total_table, best_params_df, 1.0, 0.6,
                                                                    growing_range[date_type])
                         total_table['best_model_name'] = '' if skip else best_model_name
                         total_table['best_model_value'] = 0 if skip else total_table[best_model_name]
@@ -1174,13 +1197,13 @@ def main_prediction_v2(date_type, cpg_list, ppg_list, status_id, time_connection
                         total_table = pd.merge(total_table, raw_fact, left_index=True, right_index=True, how='left')
                         total_table['volume'] = total_table['volume'].fillna(0)
                         total_table.index.name = 'index'
-                        print(total_table)
+                        #print(total_table)
                         filename = time_connection.strftime("%d%m%y")
-                        file_tag = 'result'
-                        filename += "___" + str(file_tag) + ".csv"
+                        file_tag = 'Lactalis_uplift'
+                        filename += "__" + str(file_tag) + ".csv"
                         filename = "data/" + filename
                         print(filename)
-                        # total_table.reset_index().to_csv(filename, decimal=',', index=False, mode='a')
+                        total_table.reset_index().to_csv(filename, decimal=',', index=False, mode='a')
                         # total_table_test = total_table.tail(horizon_frcst[date_type])
                         # metric_df = pd.DataFrame()
                         # metric_df.at[0, 'cpg'] = cpg_d
@@ -1195,12 +1218,13 @@ def main_prediction_v2(date_type, cpg_list, ppg_list, status_id, time_connection
                         # print(metric_df)
 
 if __name__ == '__main__':
+
     main_prediction_v2(date_type='week',
-                       cpg_list=[1],
-                       ppg_list=[2],
+                       cpg_list=[3401] , #
+                       ppg_list=[51, 21, 83], #
                        status_id=3,
-                       time_connection='2025-03-04',
-                       final_fact_date='2025-02-16',
+                       time_connection='2025-03-18',
+                       final_fact_date='2025-05-12',
                        rolling_dict={'week': 4, 'month': 2},
                        number_of_zeros={'week': 24, 'month': 6},
                        horizon_frcst={'week': 52, 'month': 6},
