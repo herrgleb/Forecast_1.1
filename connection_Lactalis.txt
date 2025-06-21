@@ -1,6 +1,0 @@
-Driver={PostgreSQL Unicode};
-Server=10.1.109.81;
-Port=5432;
-Database=MVPLactalis;
-UID=postgres;
-PWD=MYsecret&&password;
