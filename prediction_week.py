@@ -1291,7 +1291,7 @@ def main_prediction_v2(date_type, cpg_list, ppg_list, status_id, time_connection
                             simplest_index = max(len(ts.df) - simplest_model_range[date_type], 0)
                             total_table['simplest'] = total_table[simplest_index:len(ts.df)].raw_target.mean()
                             best_params_df['holt_flag'] = best_params_df['model'].apply(
-                                lambda x: 0 if x in ['holt_raw', 'holt_rolling'] else 0)
+                                lambda x: 1 if x in ['holt_raw', 'holt_rolling'] else 0)
                             best_params_df = best_params_df.sort_values(by=['holt_flag', 'score']).drop('holt_flag',
                                                                                                         axis=1)
                             print(best_params_df)
