@@ -15,8 +15,8 @@ from plotly.subplots import make_subplots
 import plotly.graph_objects as go
 import random
 
-np.random.seed(42)  # Фиксация seed для numpy
-random.seed(42)  # Фиксация seed для стандартной библиотеки Python
+np.random.seed(42)
+random.seed(42)
 
 
 def metadata_DB(chain_list,  # List of necessary buyers
@@ -24,7 +24,7 @@ def metadata_DB(chain_list,  # List of necessary buyers
                 status_name):  # Type of sales (if status_name=0, we will download all type of sales)
     CONNECTION_PATH = Path()
     # Connection parameters are inside txt file
-    FILENAME = "connection_Lactalis.txt"
+    FILENAME = "connection_Atyashevo.txt"
 
     CONNECTION_FILENAME = CONNECTION_PATH / FILENAME
     with open(CONNECTION_FILENAME) as f:
@@ -34,7 +34,7 @@ def metadata_DB(chain_list,  # List of necessary buyers
     for x in lines:
         connect_str += x.replace('/n', '')
     connect_str = " ".join(connect_str.split())
-
+    #print(connect_str)
     connection = pyodbc.connect(connect_str)
 
     # Extracting full list of buyers and categories of goods in case when we will predict full data
@@ -62,21 +62,36 @@ def metadata_DB(chain_list,  # List of necessary buyers
     category_str = category_str[:-1] + ')'
     data = pd.DataFrame()
     # Extracting data from SQL database
+
+    regular_only_cpg = pd.read_sql(f'select cpg_id, ppg_id from salesinweek s '
+                                   f'where status_id =1 group by cpg_id, ppg_id having sum(volume) >0 ',connection)
     if status_name == 3:
         # data = pd.read_sql(f"SELECT * FROM [dbo].[SalesInWeek] "
         #                    f"WHERE cpg_id in {chain_str} and ppg_id in {category_str};",
         #                    connection)
-        data = pd.read_sql(f'SELECT * FROM SalesInWeek '
-                           f'WHERE cpg_id in {chain_str} and ppg_id in {category_str} and status_id in (1,2);',
+        data = pd.read_sql(f'SELECT cpg_id, ppg_id, l2_id, year, month_id, week_id, status_id, sum(volume) as volume '
+                           f' FROM SalesInWeek '
+                           f'WHERE cpg_id in {chain_str} and ppg_id in {category_str} and status_id in (1,2) '
+                           f'group by cpg_id, ppg_id, l2_id, year, month_id, week_id, status_id;',
                            connection)
+        l2_data = pd.read_sql(f'select year, month_id, week_id, day, status_id, l2_id, sum(volume) as volume '
+                              f'from salesinweek '
+                              f'where ppg_id in {category_str} and status_id in (1,2) '
+                              f'group by year, month_id, week_id, day, status_id, l2_id ', connection)
     elif status_name in (1, 2):
         # data = pd.read_sql(f"SELECT * FROM [dbo].[SalesInWeek] "
         #                    f"WHERE cpg_id in {chain_str} and ppg_id in {category_str} "
         #                    f"and status_id = {status_name}",
         #                    connection)
-        data = pd.read_sql(f'SELECT * FROM SalesInWeek '
-                           f'WHERE cpg_id in {chain_str} and ppg_id in {category_str} and status_id = {status_name};',
+        data = pd.read_sql(f'SELECT cpg_id, ppg_id, l2_id, year, month_id, week_id, status_id, sum(volume) as volume '
+                           f' FROM SalesInWeek '
+                           f'WHERE cpg_id in {chain_str} and ppg_id in {category_str} and status_id = {status_name} '
+                           f'group by cpg_id, ppg_id, l2_id, year, month_id, week_id, status_id;',
                            connection)
+        l2_data = pd.read_sql(f'select year, month_id, week_id, day, status_id, l2_id, sum(volume) as volume '
+                              f'from salesinweek '
+                              f'where ppg_id in {category_str} and status_id = {status_name} '
+                              f'group by year, month_id, week_id, day, status_id, l2_id ', connection)
     else:
         print("Incorrect status_id")
         data = pd.DataFrame()
@@ -98,7 +113,7 @@ def metadata_DB(chain_list,  # List of necessary buyers
 
     connection.close()
 
-    return data, year_calendar, day_of_week[['day_of_week', 'Percent_dw']]
+    return data, year_calendar, day_of_week[['day_of_week', 'Percent_dw']], regular_only_cpg,  l2_data
 
 
 # Build-up Calendar DataFrame (year, week_id) between start and end points
@@ -614,10 +629,36 @@ def TS_transformation(data, type_date, correction, status_id, final_date, rollin
 
 
 def skip_option(df, column_name, zeros):
-    if df.loc[:, column_name][-zeros:].sum() == 0.000001 * zeros:
-        return True
-    else:
-        return False
+    tail_sum = df.loc[:, column_name][-zeros:].sum()
+    expected = 0.000001 * zeros
+    return np.isclose(tail_sum, expected, rtol=1e-9, atol=1e-12)
+
+def seasonality_calculation_l2(data, type_date):
+    if type_date == 'week':
+        df = data[['year', 'week_id', 'volume']]
+        df = df.groupby(by=['year', 'week_id'], as_index=False).sum()
+        df = df.astype({'year': np.int64, 'week_id': np.int64, 'volume': np.float64})
+        df['date'] = df.apply(lambda var: get_date_from_year_week(var.year, var.week_id), axis=1)
+        df['date'] = pd.to_datetime(df['date'])
+        df = df.drop(['year', 'week_id'], axis=1)
+        df.set_index('date', inplace=True)
+        df['volume'] = df['volume'].fillna(0)
+        df['week'] = df.index.isocalendar().week
+        df['year'] = df.index.isocalendar().year
+        df = df[df['year'].isin([2023, 2024, 2025])]
+
+        if df['volume'].mean() == 0:
+            df = pd.DataFrame()
+        else:
+            mean_week = df.groupby('year').mean().reset_index()
+            df = pd.merge(df, mean_week, how='left', on='year', suffixes=('', '_mean'))
+            df['seasonal_coefficient'] = df['volume'] / df['volume_mean']
+        df = df[['week', 'seasonal_coefficient']].groupby('week').mean().reset_index()
+        if 53 not in df.week.unique() and 52 in df.week.unique():
+            new_record = {'week': int(53), 'seasonal_coefficient': df[df.week == 52]['seasonal_coefficient'].iloc[0]}
+            df = df.append(new_record, ignore_index=True)
+        df['week'] = df['week'].astype(int)
+    return df
 
 
 def seasonality_calculation(data, tag, type_date):
@@ -625,26 +666,26 @@ def seasonality_calculation(data, tag, type_date):
         df = data.df.copy()
         df['week'] = df.index.isocalendar().week
         df['year'] = df.index.year
-        df = df[df['year'].isin([2023, 2024])]
+        df = df[df['year'].isin([2023, 2024, 2025])]
         if df[(tag, 'target')].mean() == 0:
             df = pd.DataFrame()
         else:
             mean_week = df.groupby(('year', '')).mean().reset_index()
             df = pd.merge(df, mean_week, how='left', on='year', suffixes=('', '_mean'))
-            df['seasonal_coefficient'] = df[(tag, 'target')] / df[(tag+'_mean', 'target')]
+            df['seasonal_coefficient'] = df[(tag, 'target')] / df[(tag + '_mean', 'target')]
         df = df[['week', 'seasonal_coefficient']].groupby(('week', '')).mean().reset_index()
         df.columns = [''.join(col) for col in df.columns]
     if type_date == 'month':
         df = data.df.copy()
         df['month'] = df.index.month
         df['year'] = df.index.year
-        df = df[df['year'].isin([2023, 2024])]
+        df = df[df['year'].isin([2023, 2024, 2025])]
         if df[(tag, 'target')].mean() == 0:
             df = pd.DataFrame()
         else:
             mean_month = df.groupby(('year', '')).mean().reset_index()
             df = pd.merge(df, mean_month, how='left', on='year', suffixes=('', '_mean'))
-            df['seasonal_coefficient'] = df[(tag, 'target')] / df[(tag+'_mean', 'target')]
+            df['seasonal_coefficient'] = df[(tag, 'target')] / df[(tag + '_mean', 'target')]
         df = df[['month', 'seasonal_coefficient']].groupby(('month', '')).mean().reset_index()
         df.columns = [''.join(col) for col in df.columns]
     return df
@@ -687,7 +728,8 @@ def prophet_modeling(train, test, type_date, changepoint, seasonality, horizon, 
                     forecast_df = forecast_ts.to_pandas(False)
                     # forecast_df.loc[forecast_df[('raw', 'target')] < 0, ('raw', 'target')] = 0
                     # forecast_df.loc[forecast_df[('rolling', 'target')] < 0, ('rolling', 'target')] = 0
-                    score_raw = mean_squared_error(forecast_df[('raw', 'target')], test.loc[:, ('raw', 'target')]) ** 0.5
+                    score_raw = mean_squared_error(forecast_df[('raw', 'target')],
+                                                   test.loc[:, ('raw', 'target')]) ** 0.5
                     score_rolling = mean_squared_error(forecast_df[('rolling', 'target')],
                                                        test.loc[:, ('raw', 'target')]) ** 0.5
                     # print(ch_p, s_p)
@@ -876,6 +918,7 @@ def best_models(data, score, seas, type_date, models_list, horizon):
     max_value = final_df[('raw', 'target')].max() * 5
     final_df.columns = ['_'.join(col) for col in final_df.columns]
     best_model_df = pd.DataFrame(columns=['model', 'score', 'score_total'])
+    model_params = pd.DataFrame(columns=['model', 'param'])
     score_t = 0
     for mdl in models_list:
         score_model = score[score['model'] == mdl]
@@ -885,6 +928,8 @@ def best_models(data, score, seas, type_date, models_list, horizon):
                 final_df[mdl + '_' + tag] = 0
             else:
                 best_params = score_model_tag[score_model_tag.score == score_model_tag.score.min()].par.values[0]
+                model_params = model_params.append({'model': mdl + '_' + tag,
+                                                    'param': best_params}, ignore_index=True)
                 if mdl == 'prophet':
                     try:
                         ch_p_f, s_p_f, type_data = best_params.split('_')
@@ -939,9 +984,23 @@ def best_models(data, score, seas, type_date, models_list, horizon):
                         score_t = mean_squared_error(fitted_values,
                                                      data.loc[:, (tag, 'target')]) ** 0.5
                         fcast = arima_model.forecast(horizon)
-                        full_prediction = pd.concat([fitted_values, fcast])
-                        forecast_df = pd.DataFrame(full_prediction, columns=['forecast'])
-                        #forecast_df = pd.DataFrame(fcast)
+                        if False:
+                            fcast_df = pd.DataFrame(fcast).rename(columns={"predicted_mean": "forecast"})
+                            if type_date == 'week':
+                                fcast_df['week'] = fcast_df.index.isocalendar().week
+                                fcast_df['original_index'] = fcast_df.index
+                                fcast_df = pd.merge(fcast_df, seas, left_on='week', right_on='week', how='left')
+                                fcast_df.set_index('original_index', inplace=True)
+                                fcast_df = fcast_df.fillna({'seasonal_coefficient': 0})
+                            fcast_df['forecast_seas'] = fcast_df['forecast'] * fcast_df['seasonal_coefficient']
+                            fcast_df.loc[fcast_df['forecast_seas'] < 0, 'forecast_seas'] = 0
+                            fcast_df.loc[fcast_df['forecast_seas'] > max_value, 'forecast_seas'] = max_value
+                            fcast_df = pd.DataFrame(fcast_df['forecast_seas'])
+                            full_prediction = pd.concat([fitted_values, fcast_df['forecast_seas']])
+                            forecast_df = pd.DataFrame(full_prediction, columns=['forecast'])
+                        else:
+                            full_prediction = pd.concat([fitted_values, fcast])
+                            forecast_df = pd.DataFrame(full_prediction, columns=['forecast'])
                         forecast_df.columns = [mdl + '_' + tag]
                         forecast_df.loc[forecast_df[mdl + '_' + tag] < 0, mdl + '_' + tag] = 0
                         final_df = pd.merge(final_df, forecast_df, left_index=True, right_index=True, how='outer')
@@ -1056,7 +1115,7 @@ def best_models(data, score, seas, type_date, models_list, horizon):
                                                       'score': score_model_tag.score.min(),
                                                       'score_total': score_t},
                                                      ignore_index=True)
-    return final_df, best_model_df
+    return final_df, best_model_df, model_params
 
 
 def best_model_growth_update(data, best_params, growth, fall, width):
@@ -1070,6 +1129,7 @@ def best_model_growth_update(data, best_params, growth, fall, width):
     len_of_last_year = len(data[last_year_index:len_st])
     best_mdl_list = best_params.model.values.tolist()
     for bm in best_mdl_list:
+
         next_year_volume = data[len_st:len_st + len_of_last_year][bm].sum()
         print(f"Growth with model {bm} is {next_year_volume / last_year_volume}")
         if ((next_year_volume / last_year_volume > (1 + growth) or next_year_volume / last_year_volume < (1 - fall)) or
@@ -1081,24 +1141,53 @@ def best_model_growth_update(data, best_params, growth, fall, width):
     return best_name
 
 
-# date_type = 'week'
-# flag = 1
-# number_of_zeros = {'week': 24, 'month': 6}
-# final_fact_date = pd.to_datetime('2024-09-29')
-# final_forecast_date = pd.to_datetime('2025-04-01')
-# simplest_model_range = {'week': 26, 'month': 6}
-# growing_range = {'week': 26, 'month': 6}
-# horizon_frcst = {'week': 14, 'month': 6}
+def best_model_growth_update_mean(data, best_params, growth, fall, width):
+    len_st = len(data[data.raw_target > 0])
+    last_year_index = max(len_st - width, 0)
 
-# raw_dataset, day_of_week_df, sku_percent = metadata()
-# print(day_of_week_df)
+    last_year_volume = data[last_year_index:len_st].raw_target.mean()
+    # print(last_year_volume)
+    best_name = 'simplest'
+
+    len_of_last_year = len(data[last_year_index:len_st])
+    best_mdl_list = best_params.model.values.tolist()
+
+    last_std_ratio = data[last_year_index:len_st].raw_target.std() / last_year_volume
+
+    for bm in best_mdl_list:
+        next_year_volume = data[len_st:len_st + len_of_last_year][bm].mean()
+        next_std_ratio = (
+            data[len_st:len_st + len_of_last_year][bm].std() / next_year_volume
+            if next_year_volume != 0
+            else 0
+        )
+        print(f"Growth with model {bm} is {next_year_volume / last_year_volume}")
+        print(f"Std ratio last={last_std_ratio:.6f}, next={next_std_ratio:.6f}")
+
+        if ((next_year_volume / last_year_volume > (1 + growth) or next_year_volume / last_year_volume < (1 - fall)) or
+                next_year_volume == 0 or next_std_ratio < last_std_ratio * 0.2):
+            print(f"{bm} is not chosen!!!")
+            continue
+        else:
+            best_name = bm
+            break
+    return best_name
 
 
-def main_prediction_v2(date_type, cpg_list, ppg_list, status_id, time_connection,
+def calc_window_mean(index, series):
+    start = max(0, index - 3)
+    end = min(len(series), index + 4)
+
+    window = series[start:end]
+    return window.sum() / len(window)
+
+
+def main_prediction_v2(date_type, cpg_list, ppg_list, status_id, time_connection, type_seasonality,
                        final_fact_date, rolling_dict, number_of_zeros, horizon_frcst,
                        simplest_model_range, growing_range):
-    raw_dataset, year_list, day_of_week_df = metadata_DB(cpg_list, ppg_list, status_name=status_id)
-    #raw_dataset = pd.DataFrame()
+    raw_dataset, year_list, day_of_week_df, reg_cpg_ppg, l2_data = metadata_DB(cpg_list, ppg_list,
+                                                                               status_name=status_id)
+    reg_cpg_ppg['cpg_ppg'] = reg_cpg_ppg.apply(lambda x: str(x.cpg_id)+'_'+str(x.ppg_id), axis=1)
     final_fact_date = pd.to_datetime(final_fact_date)
     time_connection = datetime.strptime(time_connection, '%Y-%m-%d')
     if len(cpg_list) == 0:
@@ -1116,259 +1205,154 @@ def main_prediction_v2(date_type, cpg_list, ppg_list, status_id, time_connection
         print(ppg_wlist)
         for ppg_d in ppg_wlist:
             print(f'Start for {cpg_d} and {ppg_d}')
-            dd = data_preparation(raw_dataset, cpg_d, ppg_d, group_type=date_type)
-            if len(dd) > 0:
-                # data_visualisation(dd, type_date=date_type, type_graph=['promo_regular'])
-                mdls_list = ['prophet', 'arima', 'smoothing', 'holt', 'holt_winters']
-                status_list = [status_id]
-                for st in status_list:
-                    print("Status ", st)
-                    if (((len(dd[dd.status_id == st]) > 0) and (
-                            dd[dd.status_id == st].index.min() < final_fact_date)) or
-                            ((st == 3) and (dd.index.min() < final_fact_date))):
-                        ts, raw_fact = TS_transformation(dd,
-                                                         type_date=date_type,
-                                                         correction=1,
-                                                         status_id=st,
-                                                         final_date=final_fact_date,
-                                                         rolling_month=rolling_dict['month'],
-                                                         rolling_week=rolling_dict['week'])
-                        print(ts)
-                        skip = skip_option(ts, column_name=('raw', 'target'), zeros=number_of_zeros[date_type])
-                        seas_df = seasonality_calculation(ts, tag='rolling', type_date=date_type)
-                        score_df = pd.DataFrame(columns=['model', 'data', 'par', 'score'])
-                        if skip or len(ts.df) <= 1:
-                            print(f'Skipped {cpg_d} and {ppg_d} with status {st}')
-                            total_table, best_params_df = best_models(data=ts, score=score_df, seas=seas_df,
-                                                                      type_date=date_type, models_list=mdls_list,
-                                                                      horizon=horizon_frcst[date_type])
-                        else:
-                            HORIZON = min(max(int(len(ts.df) * 0.25), 1), int(len(ts.df)) - 1)
-                            # HORIZON = 10
-                            print(len(ts.df))
-                            print(HORIZON)
-                            train_ts, test_ts = ts.train_test_split(test_size=HORIZON)
-                            score_df = holt_winters_modeling(train=train_ts, test=test_ts, type_date=date_type,
-                                                             tag='raw', step1=0.25, step2=0.25, step3=0.25,
-                                                             horizon=HORIZON, score=score_df)
-                            score_df = holt_winters_modeling(train=train_ts, test=test_ts, type_date=date_type,
-                                                             tag='rolling', step1=0.25, step2=0.25, step3=0.25,
-                                                             horizon=HORIZON, score=score_df)
-                            score_df = holt_modeling(train=train_ts, test=test_ts, type_date=date_type, seas=seas_df,
-                                                     tag='raw', step1=0.1, step2=0.1, horizon=HORIZON,
-                                                     score=score_df)
-                            score_df = holt_modeling(train=train_ts, test=test_ts, type_date=date_type, seas=seas_df,
-                                                     tag='rolling', step1=0.1, step2=0.1, horizon=HORIZON,
-                                                     score=score_df)
-                            score_df = smoothing_modeling(train=train_ts, test=test_ts, type_date=date_type,
-                                                          seas=seas_df,
-                                                          tag='raw', step=0.05, horizon=HORIZON,
-                                                          score=score_df)
-                            score_df = smoothing_modeling(train=train_ts, test=test_ts, type_date=date_type,
-                                                          seas=seas_df,
-                                                          tag='rolling', step=0.05, horizon=HORIZON,
-                                                          score=score_df)
-                            score_df = arima_modeling(train_ts, test_ts, 'raw', 8, 2, 2,
-                                                      horizon=HORIZON, score=score_df)
-                            score_df = arima_modeling(train_ts, test_ts, 'rolling', 8, 2, 2,
-                                                      horizon=HORIZON, score=score_df)
-                            score_df = prophet_modeling(train=train_ts, test=test_ts, type_date=date_type,
-                                                        changepoint=1.2, seasonality=16., horizon=HORIZON,
-                                                        score=score_df)
-                            total_table, best_params_df = best_models(data=ts, score=score_df, seas=seas_df,
-                                                                      type_date=date_type, models_list=mdls_list,
-                                                                      horizon=horizon_frcst[date_type])
+            temp_l = str(cpg_d)+'_'+str(ppg_d)
+            if status_id == 3 and (temp_l not in reg_cpg_ppg.cpg_ppg.unique()):
+                print('Only regular volume, start regular forecast')
+            else:
+                dd = data_preparation(raw_dataset, cpg_d, ppg_d, group_type=date_type)
+                l2_d = raw_dataset[(raw_dataset.ppg_id == ppg_d)].l2_id.unique()[0]
+                l2_data['day'] = pd.to_datetime(l2_data['day'])
+                l2_data = l2_data[l2_data.day < final_fact_date + pd.Timedelta(days=7)]
+                if type_seasonality == 'l2':
+                    seas_df = seasonality_calculation_l2(l2_data[l2_data.l2_id == l2_d], type_date=date_type)
+                if len(dd) > 0:
+                    # data_visualisation(dd, type_date=date_type, type_graph=['promo_regular'])
+                    mdls_list = ['prophet', 'arima', 'smoothing', 'holt', 'holt_winters']
+                    status_list = [status_id]
+                    for st in status_list:
+                        print("Status ", st)
+                        if (((len(dd[dd.status_id == st]) > 0) and (
+                                dd[dd.status_id == st].index.min() < final_fact_date)) or
+                                ((st == 3) and (dd.index.min() < final_fact_date))):
+                            ts, raw_fact = TS_transformation(dd,
+                                                             type_date=date_type,
+                                                             correction=1,
+                                                             status_id=st,
+                                                             final_date=final_fact_date,
+                                                             rolling_month=rolling_dict['month'],
+                                                             rolling_week=rolling_dict['week'])
+                            raw_fact = raw_fact.groupby(raw_fact.index).agg({'volume': 'sum'})
+                            skip = skip_option(ts, column_name=('raw', 'target'), zeros=number_of_zeros[date_type])
+                            if type_seasonality == 'ppg':
+                                seas_df = seasonality_calculation(ts, tag='rolling', type_date=date_type)
+                            score_df = pd.DataFrame(columns=['model', 'data', 'par', 'score'])
+                            if skip or len(ts.df) <= 1:
+                                print(f'Skipped {cpg_d} and {ppg_d} with status {st}')
+                                total_table, best_params_df, model_params_df = best_models(data=ts, score=score_df,
+                                                                                           seas=seas_df,
+                                                                                           type_date=date_type,
+                                                                                           models_list=mdls_list,
+                                                                                           horizon=horizon_frcst[
+                                                                                               date_type])
+                            else:
+                                HORIZON = min(max(int(len(ts.df) * 0.25), 1), int(len(ts.df)) - 1)
+                                HORIZON = min(26, HORIZON)
+                                train_ts, test_ts = ts.train_test_split(test_size=HORIZON)
+                                score_df = holt_winters_modeling(train=train_ts, test=test_ts, type_date=date_type,
+                                                                 tag='raw', step1=0.25, step2=0.25, step3=0.25,
+                                                                 horizon=HORIZON, score=score_df)
+                                score_df = holt_winters_modeling(train=train_ts, test=test_ts, type_date=date_type,
+                                                                 tag='rolling', step1=0.25, step2=0.25, step3=0.25,
+                                                                 horizon=HORIZON, score=score_df)
+                                score_df = holt_modeling(train=train_ts, test=test_ts, type_date=date_type,
+                                                         seas=seas_df,
+                                                         tag='raw', step1=0.1, step2=0.1, horizon=HORIZON,
+                                                         score=score_df)
+                                score_df = holt_modeling(train=train_ts, test=test_ts, type_date=date_type,
+                                                         seas=seas_df,
+                                                         tag='rolling', step1=0.1, step2=0.1, horizon=HORIZON,
+                                                         score=score_df)
+                                score_df = smoothing_modeling(train=train_ts, test=test_ts, type_date=date_type,
+                                                              seas=seas_df,
+                                                              tag='raw', step=0.05, horizon=HORIZON,
+                                                              score=score_df)
+                                score_df = smoothing_modeling(train=train_ts, test=test_ts, type_date=date_type,
+                                                              seas=seas_df,
+                                                              tag='rolling', step=0.05, horizon=HORIZON,
+                                                              score=score_df)
+                                score_df = arima_modeling(train_ts, test_ts, 'raw', 8, 2, 2,
+                                                          horizon=HORIZON, score=score_df)
+                                score_df = arima_modeling(train_ts, test_ts, 'rolling', 8, 2, 2,
+                                                          horizon=HORIZON, score=score_df)
+                                score_df = prophet_modeling(train=train_ts, test=test_ts, type_date=date_type,
+                                                            changepoint=1.2, seasonality=16., horizon=HORIZON,
+                                                            score=score_df)
 
-                        simplest_index = max(len(ts.df) - simplest_model_range[date_type], 0)
-                        total_table['simplest'] = total_table[simplest_index:len(ts.df)].raw_target.mean()
-                        best_params_df['holt_flag'] = best_params_df['model'].apply(
-                            lambda x: 1 if x in ['holt_raw', 'holt_rolling'] else 0)
-                        best_params_df = best_params_df.sort_values(by=['holt_flag', 'score']).drop('holt_flag', axis=1)
-                        best_model_name = best_model_growth_update(total_table, best_params_df, 1.0, 0.6,
-                                                                   growing_range[date_type])
-                        total_table['best_model_name'] = '' if skip else best_model_name
-                        total_table['best_model_value'] = 0 if skip else total_table[best_model_name]
+                                total_table, best_params_df, model_params_df = best_models(data=train_ts, score=score_df,
+                                                                                           seas=seas_df,
+                                                                                           type_date=date_type,
+                                                                                           models_list=mdls_list,
+                                                                                           horizon=horizon_frcst[
+                                                                                               date_type])
+                                # model_params_df['cpg_id'] = cpg_d
+                                # model_params_df['ppg_id'] = ppg_d
+                                # model_params_df.reset_index().to_csv("data/model_params_ekfo_1510.csv", decimal=',',
+                                #                                      index=False, mode='a')
+                            simplest_index = max(len(ts.df) - simplest_model_range[date_type], 0)
+                            total_table['simplest'] = total_table[simplest_index:len(ts.df)].raw_target.mean()
+                            best_params_df['holt_flag'] = best_params_df['model'].apply(
+                                lambda x: 0 if x in ['holt_raw', 'holt_rolling'] else 0)
+                            best_params_df = best_params_df.sort_values(by=['holt_flag', 'score']).drop('holt_flag',
+                                                                                                        axis=1)
+                            print(best_params_df)
+                            # for roll_mdls in ['smoothing_raw', 'smoothing_rolling',
+                            #                   'holt_raw','holt_rolling',
+                            #                   'arima_raw','arima_rolling',
+                            #                   'holt_winters_raw','holt_winters_rolling',
+                            #                   'prophet_raw','prophet_rolling']:
+                            #     total_table[roll_mdls] = [calc_window_mean(i, total_table[roll_mdls])
+                            #                               for i in range(len(total_table))]
+                            # best_model_name = best_model_growth_update(total_table, best_params_df, 0.6, 0.6,
+                            #                                            growing_range[date_type])
+                            print("Используем проверку роста от средней величины")
+                            best_model_name = best_model_growth_update_mean(total_table, best_params_df,
+                                                                            0.6, 0.4,
+                                                                            growing_range[date_type])
+                            #best_model_name = 'prophet_rolling'
+                            total_table['best_model_name'] = '' if skip else best_model_name
+                            total_table['best_model_value'] = 0 if skip else total_table[best_model_name]
+                            total_table['status_id'] = st  # 'Regular' if st == 2 else 'Promo' if st == 1 else 'Total'
+                            total_table['cpg'] = cpg_d
+                            total_table['ppg'] = ppg_d
+                            total_table['correction'] = 'Yes'  # if flag == 1 else 'No'
+                            total_table['date_upload'] = time_connection
+                            total_table = pd.merge(total_table, raw_fact, left_index=True, right_index=True, how='left')
+                            total_table['volume'] = total_table['volume'].fillna(0)
+                            total_table.index.name = 'index'
+                            filename = time_connection.strftime("%d%m%y")
+                            file_tag = 'frcst'
+                            filename += "__" + str(file_tag) + ".csv"
+                            filename = "data/" + filename
+                            print(filename)
+                            total_table.reset_index().to_csv(filename, decimal=',', index=False) #, mode='a')
 
-                        total_table['status_id'] = st # 'Regular' if st == 2 else 'Promo' if st == 1 else 'Total'
-                        total_table['cpg'] = cpg_d
-                        total_table['ppg'] = ppg_d
-                        total_table['correction'] = 'Yes'  # if flag == 1 else 'No'
-                        total_table['date_upload'] = time_connection
-                        total_table = pd.merge(total_table, raw_fact, left_index=True, right_index=True, how='left')
-                        total_table['volume'] = total_table['volume'].fillna(0)
-                        total_table.index.name = 'index'
-                        #print(total_table)
-                        filename = time_connection.strftime("%d%m%y")
-                        file_tag = 'Lactalis_uplift'
-                        filename += "__" + str(file_tag) + ".csv"
-                        filename = "data/" + filename
-                        print(filename)
-                        total_table.reset_index().to_csv(filename, decimal=',', index=False, mode='a')
-                        # total_table_test = total_table.tail(horizon_frcst[date_type])
-                        # metric_df = pd.DataFrame()
-                        # metric_df.at[0, 'cpg'] = cpg_d
-                        # metric_df.at[0, 'ppg'] = ppg_d
-                        # metric_df.at[0, 'status_id'] = 'Regular' if st == 2 else 'Promo' if st == 1 else 'Total'
-                        # for cols in ['prophet_raw', 'prophet_rolling', 'arima_raw', 'arima_rolling', 'smoothing_raw',
-                        #              'smoothing_rolling', 'holt_raw', 'holt_rolling', 'holt_winters_raw',
-                        #              'holt_winters_rolling', 'simplest', 'best_model_value']:
-                        #     metric_df.at[0, cols] = 1 - (
-                        #                 (total_table_test[cols] - total_table_test['volume']).abs().sum() /
-                        #                 total_table_test['volume'].sum())
-                        # print(metric_df)
+                            if status_id == 2 and (temp_l not in reg_cpg_ppg.cpg_ppg.unique()):
+                                print("Upload regular as total forecast")
+                                total_table['status_id'] = 3
+                                total_table.reset_index().to_csv(filename, decimal=',', index=False, mode='a')
+                            # total_table_test = total_table.tail(horizon_frcst[date_type])
+                            # metric_df = pd.DataFrame()
+                            # metric_df.at[0, 'cpg'] = cpg_d
+                            # metric_df.at[0, 'ppg'] = ppg_d
+                            # metric_df.at[0, 'status_id'] = 'Regular' if st == 2 else 'Promo' if st == 1 else 'Total'
+                            # for cols in ['prophet_raw', 'prophet_rolling', 'arima_raw', 'arima_rolling', 'smoothing_raw',
+                            #              'smoothing_rolling', 'holt_raw', 'holt_rolling', 'holt_winters_raw',
+                            #              'holt_winters_rolling', 'simplest', 'best_model_value']:
+                            #     metric_df.at[0, cols] = 1 - (
+                            #                 (total_table_test[cols] - total_table_test['volume']).abs().sum() /
+                            #                 total_table_test['volume'].sum())
+                            # print(metric_df)
 
 if __name__ == '__main__':
-
-    main_prediction_v2(date_type='week',
-                       cpg_list=[3401] , #
-                       ppg_list=[51, 21, 83], #
-                       status_id=3,
-                       time_connection='2025-03-18',
-                       final_fact_date='2025-05-12',
+    main_prediction_v2(date_type='week', # ['week', 'month']
+                       cpg_list=[44], #
+                       ppg_list=[781], #
+                       status_id=3,  # 2 - regular, 3 - total
+                       time_connection='2025-10-29',
+                       type_seasonality='l2', # ['ppg', 'l2']
+                       final_fact_date='2025-11-23',
                        rolling_dict={'week': 4, 'month': 2},
-                       number_of_zeros={'week': 24, 'month': 6},
-                       horizon_frcst={'week': 52, 'month': 6},
+                       number_of_zeros={'week': 12, 'month': 3},
+                       horizon_frcst={'week': 58, 'month': 6},
                        simplest_model_range={'week': 26, 'month': 6},
                        growing_range={'week': 26, 'month': 6})
-
-# print(sku_percent.head(10))
-# cpg_list = ['HoReCa', 'АО "ДИКСИ ЮГ"', 'АО "ТАНДЕР"', 'АО ТД ПЕРЕКРЕСТОК', 'Дискаунтеры', 'Дистрибьюторы',
-#             'Локальные сети (Прочее)', 'Локальные сети (ТОП)', 'ООО "О`КЕЙ"', 'ООО "ОНЛАЙН-ГИПЕРМАРКЕТ"',
-#             'ООО "УМНЫЙ РИТЕЙЛ"', 'Розница', 'Собственные сети', 'СОЮЗ СВ. ИОАННА ВОИНА ООО', 'ООО "АШАН"',
-#             'ООО "ИНТЕРНЕТ РЕШЕНИЯ"', 'ООО "ЯНДЕКС.ЛАВКА"', 'ООО "ГИПЕРГЛОБУС"', 'ООО "АГРОТОРГ"',
-#             'ООО Лента', 'ООО "МЕТРО КЭШ ЭНД КЕРРИ"', 'АТАК ООО', 'ООО "АГРОАСПЕКТ"', 'КОПЕЙКА-МОСКВА ООО',
-#             'ООО "СЛАДКАЯ ЖИЗНЬ Н.Н."', 'ГОРОДСКОЙ СУПЕРМАРКЕТ ООО']
-#
-# cpg_list = [7228, 7274]
-#cpg_list = ['Собственные сети']
-#'СЕРВЕЛАТ ГОСТ ЗП п / а 750г В / У ОХЛ'
-
-# ppg_list = ['КОЛБАСА ПОЛУКОПЧЕНАЯ Чесночная ф/о охл В/У 375г', 'КОЛБАСА СЕРВЕЛАТ Коньячный охл в/к в/у 375',
-#             'КОЛБАСА Сервелат Финский в/к в/у 375', 'Колбаса_Докторская_вареная_охл',
-#             'Колбаса_Докторская_вареная_охл_470г', 'Колбаса_Классическая_охл_п/а_~1200г',
-#             'Колбаса_Классическая_охл_п/а_470г', 'Колбаса_Краковская_полукопченая_охл_н/о_430г',
-#             'Колбаса_Молочная_вареная_охл', 'Колбаса_с_молоком_вареная_охл',
-#             'Колбаса_Сервелат_варено-копч._охл_фиброуз_375г', 'Колбаса_Филейная_вареная_охл_п/а',
-#             'РЕБРЫШКИ по-домашнему 500г охл в/у', 'СЕРВЕЛАТ ГОСТ вк ф/о 300гр В/У ОХЛ',
-#             'СЕРВЕЛАТ ГОСТ ЗП п/а 750г В/У ОХЛ', 'Сервелат Коньячный в/к нарезка ОХЛ ГЗМС 100гр',
-#             'СЕРВЕЛАТ МРАМОРНЫЙ ВУ ОХЛ 330г', 'Сервелат Финский в/к нарезка ОХЛ ГЗМС 100гр',
-#             'СОСИСКИ МОЛОЧНЫЕ ц/о 350гр ГЗМС ОХЛ', 'СОСИСКИ ОРИГИНАЛЬНЫЕ п/а 350г ОХЛ ГЗМС', 'Сосиски_Венские_охл_ц/о',
-#             'Сосиски_Молочные_охл_ц/о_400г', 'Сосиски_Сочные_охл_п/а']
-
-#ppg_list = ['Сосиски_Сочные_охл_п/а']
-# for cpg_d in cpg_list:
-#     ppg_list = raw_dataset[raw_dataset.cpg_id == cpg_d].ppg_id.unique()
-#     print(ppg_list)
-#     #ppg_list = [167, 152, 119]
-#     for ppg_d in ppg_list:
-#         print(f'Start for {cpg_d} and {ppg_d}')
-#         dd = data_preparation(raw_dataset, cpg_d, ppg_d, group_type=date_type)
-#         if len(dd) > 0:
-#             #data_visualisation(dd, type_date=date_type, type_graph=['promo_regular'])
-#             mdls_list = ['prophet', 'arima', 'smoothing', 'holt', 'holt_winters']
-#             for st in [2, 3]:
-#                 print("Status ", st)
-#                 if (((len(dd[dd.status_id == st]) > 0) and (dd[dd.status_id == st].index.min() < final_fact_date)) or
-#                         ((st == 3) and (dd.index.min() < final_fact_date))):
-#                     ts, raw_fact = TS_transformation(dd,
-#                                                      type_date=date_type,
-#                                                      correction=flag,
-#                                                      status_id=st,
-#                                                      final_date=final_fact_date)
-#                     skip = skip_option(ts, column_name=('raw', 'target'), zeros=number_of_zeros[date_type])
-#                     seas_df = seasonality_calculation(ts, tag='rolling', type_date=date_type)
-#                     #print(seas_df)
-#                     score_df = pd.DataFrame(columns=['model', 'data', 'par', 'score'])
-#                     if skip or len(ts.df) <= 1:
-#                         print(f'Skipped {cpg_d} and {ppg_d} with status {st}')
-#                         total_table, best_params_df = best_models(data=ts, score=score_df, seas=seas_df,
-#                                                                   type_date=date_type, models_list=mdls_list,
-#                                                                   horizon=horizon_frcst[date_type])
-#                     else:
-#                         HORIZON = min(max(int(len(ts.df) * 0.25), 1), int(len(ts.df)) - 1)
-#                         print(HORIZON)
-#                         train_ts, test_ts = ts.train_test_split(test_size=HORIZON)
-#                         score_df = holt_winters_modeling(train=train_ts, test=test_ts, type_date=date_type,
-#                                                          tag='raw', step1=0.25, step2=0.25, step3=0.25,
-#                                                          horizon=HORIZON, score=score_df)
-#                         score_df = holt_winters_modeling(train=train_ts, test=test_ts, type_date=date_type,
-#                                                          tag='rolling', step1=0.25, step2=0.25, step3=0.25,
-#                                                          horizon=HORIZON, score=score_df)
-#                         score_df = holt_modeling(train=train_ts, test=test_ts, type_date=date_type, seas=seas_df,
-#                                                  tag='raw', step1=0.1, step2=0.1, horizon=HORIZON,
-#                                                  score=score_df)
-#                         score_df = holt_modeling(train=train_ts, test=test_ts, type_date=date_type, seas=seas_df,
-#                                                  tag='rolling', step1=0.1, step2=0.1, horizon=HORIZON,
-#                                                  score=score_df)
-#                         score_df = smoothing_modeling(train=train_ts, test=test_ts, type_date=date_type, seas=seas_df,
-#                                                       tag='raw', step=0.05, horizon=HORIZON,
-#                                                       score=score_df)
-#                         score_df = smoothing_modeling(train=train_ts, test=test_ts, type_date=date_type, seas=seas_df,
-#                                                       tag='rolling', step=0.05, horizon=HORIZON,
-#                                                       score=score_df)
-#                         score_df = arima_modeling(train_ts, test_ts, 'raw', 9, 2, 2,
-#                                                   horizon=HORIZON, score=score_df)
-#                         score_df = arima_modeling(train_ts, test_ts, 'rolling', 9, 2, 2,
-#                                                   horizon=HORIZON, score=score_df)
-#                         score_df = prophet_modeling(train=train_ts, test=test_ts, type_date=date_type,
-#                                                     changepoint=1.2, seasonality=16., horizon=HORIZON, score=score_df)
-#                         total_table, best_params_df = best_models(data=ts, score=score_df, seas=seas_df,
-#                                                                   type_date=date_type, models_list=mdls_list,
-#                                                                   horizon=horizon_frcst[date_type])
-#                     print(best_params_df)
-#
-#                     simplest_index = max(len(ts.df) - simplest_model_range[date_type], 0)
-#                     total_table['simplest'] = total_table[simplest_index:len(ts.df)].raw_target.mean()
-#                     best_params_df['holt_flag'] = best_params_df['model'].apply(
-#                         lambda x: 1 if x in ['holt_raw', 'holt_rolling'] else 0)
-#                     best_params_df = best_params_df.sort_values(by=['holt_flag', 'score']).drop('holt_flag', axis=1)
-#                     best_model_name = best_model_growth_update(total_table, best_params_df, 0.8, 0.4,
-#                                                                growing_range[date_type])
-#                     total_table['best_model_name'] = '' if skip else best_model_name
-#                     total_table['best_model_value'] = 0 if skip else total_table[best_model_name]
-#
-#                     total_table['status_id'] = 'Regular' if st == 2 else 'Promo' if st == 1 else 'Total'
-#                     total_table['cpg'] = cpg_d
-#                     total_table['ppg'] = ppg_d
-#                     total_table['correction'] = 'Yes' if flag == 1 else 'No'
-#                     total_table = pd.merge(total_table, raw_fact, left_index=True, right_index=True, how='left')
-#                     total_table['volume'] = total_table['volume'].fillna(0)
-#                     total_table.index.name = 'index'
-#                     #print(total_table)
-#                     total_table_test = total_table.tail(horizon_frcst[date_type])
-#                     metric_df = pd.DataFrame()
-#                     metric_df.at[0, 'cpg'] = cpg_d
-#                     metric_df.at[0, 'ppg'] = ppg_d
-#                     metric_df.at[0, 'status_id'] = 'Regular' if st == 2 else 'Promo' if st == 1 else 'Total'
-#                     for cols in ['prophet_raw', 'prophet_rolling', 'arima_raw', 'arima_rolling', 'smoothing_raw',
-#                                  'smoothing_rolling', 'holt_raw', 'holt_rolling', 'holt_winters_raw',
-#                                  'holt_winters_rolling', 'simplest', 'best_model_value']:
-#                         metric_df.at[0, cols] = 1 - ((total_table_test[cols] - total_table_test['volume']).abs().sum() /
-#                                                      total_table_test['volume'].sum())
-#                     print(metric_df)
-#                     total_table.reset_index().to_csv('president_weekly.csv', decimal=',', index=False, mode='a')
-#                     metric_df.to_csv('president_metrcis.csv', decimal=',', index=False, mode='a')
-#                     # start_date = '2024-07-01'
-#                     # end_date = '2024-09-02'
-#                     # total_table_daily = total_table.loc[start_date:end_date]
-#                     # total_table_daily = total_table_daily.resample('D').ffill().reset_index()
-#                     # total_table_daily['index'] = pd.to_datetime(total_table_daily['index'], format='%d.%m.%Y')
-#                     # total_table_daily['day_of_week'] = total_table_daily['index'].dt.weekday
-#                     # total_table_daily = pd.merge(total_table_daily,
-#                     #                              day_of_week_df,
-#                     #                              left_on='day_of_week',
-#                     #                              right_on='day_of_week',
-#                     #                              how='left')
-#                     # total_table_daily = pd.merge(total_table_daily,
-#                     #                              sku_percent,
-#                     #                              left_on=['cpg', 'ppg'],
-#                     #                              right_on=['cpg_id', 'ppg_id'],
-#                     #                              how='left')
-#                     # total_table_daily = total_table_daily.rename(columns={'index': 'date'})
-#                     # for cols in ['prophet_raw', 'prophet_rolling', 'arima_raw', 'arima_rolling', 'smoothing_raw',
-#                     #              'smoothing_rolling', 'holt_raw', 'holt_rolling', 'simplest', 'best_model_value']:
-#                     #     total_table_daily[cols] = (total_table_daily[cols] * total_table_daily['Percent_dw'] *
-#                     #                                total_table_daily['Percent_sku'])
-#                     # total_table_daily = total_table_daily.drop(['raw_target', 'volume', 'cpg_id', 'ppg_id','day_of_week',
-#                     #                                             'Percent_dw', 'Percent_sku'], axis=1)
-#                     # total_table_daily.to_csv('miratorg_test_3_250125.csv', decimal=',', index=False, mode='a')
